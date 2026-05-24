@@ -1,0 +1,170 @@
+from datetime import date, datetime
+from typing import List, Optional, Dict, Any
+from uuid import UUID
+from pydantic import BaseModel, Field
+
+
+# Stock Schemas
+class StockBase(BaseModel):
+    symbol: str = Field(..., max_length=10, description="Stock Ticker Symbol")
+    name: str = Field(..., description="Company Name")
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+
+
+class StockCreate(StockBase):
+    pass
+
+
+class StockSchema(StockBase):
+    class Config:
+        from_attributes = True
+
+
+# Stock Price Schemas
+class StockPriceBase(BaseModel):
+    symbol: str
+    date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class StockPriceCreate(StockPriceBase):
+    pass
+
+
+class StockPriceSchema(StockPriceBase):
+    id: UUID
+
+    class Config:
+        from_attributes = True
+
+
+# Portfolio Holding Schemas
+class PortfolioHoldingBase(BaseModel):
+    symbol: str
+    shares: float
+    average_buy_price: float
+
+
+class PortfolioHoldingCreate(PortfolioHoldingBase):
+    pass
+
+
+class PortfolioHoldingUpdate(BaseModel):
+    shares: float
+    average_buy_price: float
+
+
+class PortfolioHoldingSchema(PortfolioHoldingBase):
+    id: UUID
+    portfolio_id: UUID
+    last_updated: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Portfolio Schemas
+class PortfolioBase(BaseModel):
+    session_id: str
+    name: str
+
+
+class PortfolioCreate(BaseModel):
+    name: str
+
+
+class PortfolioSchema(PortfolioBase):
+    id: UUID
+    created_at: datetime
+    holdings: List[PortfolioHoldingSchema] = []
+
+    class Config:
+        from_attributes = True
+
+
+# Watchlist Schemas
+class WatchlistCreate(BaseModel):
+    symbol: str
+
+
+class WatchlistSchema(BaseModel):
+    id: UUID
+    session_id: str
+    symbol: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Alert Schemas
+class AlertCreate(BaseModel):
+    symbol: str
+    trigger_type: str = Field(..., description="Trigger Type: rsi_below, rsi_above, sentiment_drop, price_above, price_below")
+    trigger_value: float
+
+
+class AlertSchema(AlertCreate):
+    id: UUID
+    session_id: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Investment Report Schemas
+class InvestmentReportSchema(BaseModel):
+    id: UUID
+    run_id: UUID
+    ticker: str
+    recommendation: str
+    confidence_score: int
+    content_markdown: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Agent Run Schemas
+class AgentRunBase(BaseModel):
+    session_id: str
+    ticker: str
+
+
+class AgentRunSchema(AgentRunBase):
+    id: UUID
+    status: str
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    report: Optional[InvestmentReportSchema] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Orchestration Schemas (Request/Response)
+class ResearchQueryRequest(BaseModel):
+    query: str = Field(..., description="Natural language stock research query (e.g. Should I buy NVDA?)")
+
+
+class AgentExecutionLog(BaseModel):
+    node: str
+    message: str
+    timestamp: datetime
+
+
+class AgentRunDetailResponse(BaseModel):
+    run_id: UUID
+    ticker: str
+    status: str
+    logs: List[AgentExecutionLog] = []
+    report: Optional[InvestmentReportSchema] = None
+    telemetry: Dict[str, Any] = {}
