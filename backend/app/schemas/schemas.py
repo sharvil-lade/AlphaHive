@@ -233,3 +233,23 @@ class SentimentResponse(BaseModel):
     threats: List[str]
     source: str
 
+
+class IndexResponse(BaseModel):
+    symbol: str
+    form_type: str
+    status: str
+    chunks_indexed: int
+
+
+class SearchChunkDetail(BaseModel):
+    text: str
+    section: str
+    chunk_id: int
+    score: float
+
+
+class QueryResponse(BaseModel):
+    symbol: str
+    query: str
+    matches: List[SearchChunkDetail]
+

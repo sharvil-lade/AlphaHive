@@ -53,6 +53,13 @@ export interface AlertSchema {
   created_at: string;
 }
 
+export interface IndexResponse {
+  symbol: string;
+  form_type: string;
+  status: string;
+  chunks_indexed: number;
+}
+
 export interface InvestmentReportSchema {
   id: string;
   run_id: string;
@@ -123,6 +130,12 @@ export interface PortfolioSchema {
   holdings: PortfolioHoldingSchema[];
 }
 
+export interface QueryResponse {
+  symbol: string;
+  query: string;
+  matches: SearchChunkDetail[];
+}
+
 export interface QuoteResponse {
   symbol: string;
   price: number;
@@ -138,6 +151,13 @@ export interface QuoteResponse {
 export interface ResearchQueryRequest {
   /** Natural language stock research query (e.g. Should I buy NVDA?) */
   query: string;
+}
+
+export interface SearchChunkDetail {
+  text: string;
+  section: string;
+  chunk_id: number;
+  score: number;
 }
 
 export interface SentimentResponse {
