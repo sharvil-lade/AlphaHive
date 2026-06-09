@@ -223,3 +223,13 @@ class TechnicalPostureResponse(BaseModel):
     summary: str
     pivots: Optional[PivotDetails] = None
 
+
+class SentimentResponse(BaseModel):
+    symbol: str
+    score: int
+    rating: str
+    summary: str
+    opportunities: List[str]
+    threats: List[str]
+    source: str
+

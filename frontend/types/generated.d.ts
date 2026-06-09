@@ -140,6 +140,16 @@ export interface ResearchQueryRequest {
   query: string;
 }
 
+export interface SentimentResponse {
+  symbol: string;
+  score: number;
+  rating: string;
+  summary: string;
+  opportunities: string[];
+  threats: string[];
+  source: string;
+}
+
 export interface SignalDetail {
   score: number;
   signal: string;

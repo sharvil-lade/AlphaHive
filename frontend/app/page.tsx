@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import type { TechnicalPostureResponse } from "../types/generated";
+import type { TechnicalPostureResponse, SentimentResponse } from "../types/generated";
 import {
   TrendingUp,
   Search,
@@ -98,6 +98,41 @@ const MOCK_TA_POSTURE: Record<string, any> = {
   }
 };
 
+// Fallback Mock data for Sentiment Posture evaluation
+const MOCK_SENTIMENT_POSTURE: Record<string, any> = {
+  NVDA: {
+    symbol: "NVDA",
+    score: 82,
+    rating: "BUY",
+    summary: "Sentiment around NVIDIA remains extremely positive, powered by strong Blackwell launch prospects and increased hyperscaler CapEx allocation. Social channels demonstrate intense call-buying momentum.",
+    opportunities: [
+      "Intense customer demand for Blackwell B200 platforms",
+      "Increasing hyperscaler capital expenditure budgets",
+      "Dominant moat around CUDA software library integration"
+    ],
+    threats: [
+      "TSMC packaging capacity constraints (CoWoS packaging bottlenecks)",
+      "Export restrictions in key international markets"
+    ],
+    source: "local_lexical_fallback"
+  },
+  TSLA: {
+    symbol: "TSLA",
+    score: -35,
+    rating: "SELL",
+    summary: "Tesla sentiment is moderately bearish, weighed down by compressed automotive profit margins and global price wars. Social channels indicate heightened caution over short-term deliveries.",
+    opportunities: [
+      "Potential margin acceleration from future compact car platforms",
+      "Utility energy storage business growing over 20%"
+    ],
+    threats: [
+      "Sustained price reductions compressing automotive margins below 16%",
+      "Robotaxi autonomous timeline risks pushing back monetization"
+    ],
+    source: "local_lexical_fallback"
+  }
+};
+
 // Simulated Multi-Agent Execution Steps
 const AGENT_SIMULATION_STEPS = [
   { agent: "Research Agent", msg: "Scanning Finnhub metrics and basic fundamentals...", duration: 800 },
@@ -119,6 +154,9 @@ export default function Dashboard() {
   
   // Technical Analysis Posture State
   const [taPosture, setTaPosture] = useState<TechnicalPostureResponse | null>(null);
+  
+  // Sentiment Analysis Posture State
+  const [sentimentPosture, setSentimentPosture] = useState<SentimentResponse | null>(null);
   
   // Agent Execution State
   const [isRunning, setIsRunning] = useState(false);
@@ -144,6 +182,7 @@ export default function Dashboard() {
     // Default static mock data first
     setChartData(HISTORICAL_DATA[ticker] || HISTORICAL_DATA.NVDA);
     setTaPosture(MOCK_TA_POSTURE[ticker] || MOCK_TA_POSTURE.NVDA);
+    setSentimentPosture(MOCK_SENTIMENT_POSTURE[ticker] || MOCK_SENTIMENT_POSTURE.NVDA);
 
     const fetchLiveData = async () => {
       try {
@@ -162,6 +201,13 @@ export default function Dashboard() {
           if (taResp.ok) {
             const taData = await taResp.json();
             setTaPosture(taData);
+          }
+
+          // Fetch Sentiment Posture
+          const sentimentResp = await fetch(`${host}/api/v1/sentiment/summary?symbol=${ticker}`);
+          if (sentimentResp.ok) {
+            const sentimentData = await sentimentResp.json();
+            setSentimentPosture(sentimentData);
           }
         }
 
@@ -186,6 +232,7 @@ export default function Dashboard() {
         // Fallback silently to static mock data on error (offline mode)
         console.warn("Backend API not reachable, running in offline demo mode:", err);
         setTaPosture(MOCK_TA_POSTURE[ticker] || MOCK_TA_POSTURE.NVDA);
+        setSentimentPosture(MOCK_SENTIMENT_POSTURE[ticker] || MOCK_SENTIMENT_POSTURE.NVDA);
       }
     };
 
@@ -336,7 +383,7 @@ export default function Dashboard() {
         {/* Page Inner Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Indices Bar */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             {[
               { index: "SPY (S&P 500)", val: "5,304.72", change: "+0.45%", isUp: true },
               { index: "QQQ (Nasdaq)", val: "18,802.10", change: "+0.82%", isUp: true },
@@ -378,6 +425,34 @@ export default function Dashboard() {
                 (taPosture?.rating || "HOLD") === "BUY" 
                   ? "text-bullish" 
                   : (taPosture?.rating || "HOLD") === "SELL" 
+                    ? "text-bearish" 
+                    : "text-yellow-500"
+              }`} />
+            </div>
+
+            {/* Sentiment Posture Card */}
+            <div className="glass-panel p-4 rounded-xl flex items-center justify-between">
+              <div>
+                <div className="text-[10px] text-mutedText font-semibold tracking-wider">Sentiment posture</div>
+                <div className={`text-sm font-black mt-1 ${
+                  (sentimentPosture?.rating || "HOLD") === "BUY" 
+                    ? "text-bullish" 
+                    : (sentimentPosture?.rating || "HOLD") === "SELL" 
+                      ? "text-bearish" 
+                      : "text-yellow-500"
+                }`}>
+                  {(sentimentPosture?.rating || "HOLD") === "BUY" 
+                    ? "Bullish" 
+                    : (sentimentPosture?.rating || "HOLD") === "SELL" 
+                      ? "Bearish" 
+                      : "Neutral"}{" "}
+                  ({sentimentPosture?.score && sentimentPosture.score >= 0 ? "+" : ""}{sentimentPosture?.score ?? 0})
+                </div>
+              </div>
+              <Cpu className={`w-4 h-4 animate-pulse ${
+                (sentimentPosture?.rating || "HOLD") === "BUY" 
+                  ? "text-bullish" 
+                  : (sentimentPosture?.rating || "HOLD") === "SELL" 
                     ? "text-bearish" 
                     : "text-yellow-500"
               }`} />
@@ -640,15 +715,21 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-mutedText font-semibold">Recommendation:</span>
                     <span className={`text-xs font-black uppercase px-3 py-1 rounded ${
-                      ticker === "NVDA" ? "text-bullish bg-bullish/10 border border-bullish/20" : "text-bearish bg-bearish/10 border border-bearish/20"
+                      (sentimentPosture?.rating || "HOLD") === "BUY" 
+                        ? "text-bullish bg-bullish/10 border border-bullish/20" 
+                        : (sentimentPosture?.rating || "HOLD") === "SELL" 
+                          ? "text-bearish bg-bearish/10 border border-bearish/20" 
+                          : "text-yellow-500 bg-yellow-500/10 border border-yellow-500/20"
                     }`}>
-                      {ticker === "NVDA" ? "BUY" : "HOLD / SELL"}
+                      {sentimentPosture?.rating || "HOLD"}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-mutedText font-semibold">Confidence Score:</span>
-                    <span className="text-sm font-black text-cyanGlow">{ticker === "NVDA" ? "88/100" : "35/100"}</span>
+                    <span className="text-sm font-black text-cyanGlow">
+                      {sentimentPosture?.score !== undefined ? Math.abs(sentimentPosture.score) : 50}/100
+                    </span>
                   </div>
                 </div>
               </div>
@@ -661,11 +742,7 @@ export default function Dashboard() {
                       <BookOpen className="w-3.5 h-3.5 text-cyanGlow" /> Executive Summary
                     </h4>
                     <p className="text-gray-300">
-                      {ticker === "NVDA" ? (
-                        "NVIDIA continues to demonstrate unparalleled market positioning in AI compute architecture. Recent channel checks indicate that customer demand for Hopper (H100/H200) remains intense, while backlog allocations for the upcoming Blackwell (B200) family extend well into late 2026. Financial metrics remain exceptionally robust, characterized by operating margins exceeding 60% and free cash flow yield scaling consistently."
-                      ) : (
-                        "Tesla experiences substantial near-term macro headwinds, including declining average transaction prices and compressed auto gross margins (ex-credits). While autonomous driving software (FSD v12) continues to advance, regulatory barriers and hardware rollouts suggest meaningful monetization is deferred. Maintain caution until volumes stabilize."
-                      )}
+                      {sentimentPosture?.summary || "No sentiment summary loaded."}
                     </p>
                   </div>
 
@@ -675,19 +752,9 @@ export default function Dashboard() {
                         <TrendingUp className="w-3.5 h-3.5" /> Bullish Catalysts (Opportunities)
                       </h5>
                       <ul className="space-y-1.5 text-gray-300 list-disc list-inside">
-                        {ticker === "NVDA" ? (
-                          <>
-                            <li>Blackwell platform launching ahead of schedule</li>
-                            <li>Hyperscaler CapEx budgets increased by 22%</li>
-                            <li>Sustained high barriers to entry in software SDK stack</li>
-                          </>
-                        ) : (
-                          <>
-                            <li>Next-generation $25k compact platform launch</li>
-                            <li>Megapack utility storage margins scaling to 20%</li>
-                            <li>Licensing potential for FSD capabilities</li>
-                          </>
-                        )}
+                        {sentimentPosture?.opportunities?.map((opp: string, i: number) => (
+                          <li key={i}>{opp}</li>
+                        )) || <li>No opportunities identified.</li>}
                       </ul>
                     </div>
 
@@ -696,19 +763,9 @@ export default function Dashboard() {
                         <AlertTriangle className="w-3.5 h-3.5" /> Key Risks & Concerns (Threats)
                       </h5>
                       <ul className="space-y-1.5 text-gray-300 list-disc list-inside">
-                        {ticker === "NVDA" ? (
-                          <>
-                            <li>Supply chain bottlenecks on CoWoS packaging</li>
-                            <li>Increased regulatory export controls in Asian corridors</li>
-                            <li>Potential digestion phase in hyperscaler hardware spending</li>
-                          </>
-                        ) : (
-                          <>
-                            <li>Sustained price wars in European/Chinese markets</li>
-                            <li>Slower capital expenditure cycles by global consumers</li>
-                            <li>Brand dilution and high execution beta</li>
-                          </>
-                        )}
+                        {sentimentPosture?.threats?.map((threat: string, i: number) => (
+                          <li key={i}>{threat}</li>
+                        )) || <li>No threats identified.</li>}
                       </ul>
                     </div>
                   </div>
