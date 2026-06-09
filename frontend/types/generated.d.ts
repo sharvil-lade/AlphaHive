@@ -63,6 +63,15 @@ export interface InvestmentReportSchema {
   created_at: string;
 }
 
+export interface NewsResponse {
+  symbol: string;
+  headline: string;
+  summary: string;
+  url: string;
+  source: string;
+  published_at: string;
+}
+
 export interface PortfolioBase {
   session_id: string;
   name: string;
@@ -104,6 +113,18 @@ export interface PortfolioSchema {
   id: string;
   created_at: string;
   holdings: PortfolioHoldingSchema[];
+}
+
+export interface QuoteResponse {
+  symbol: string;
+  price: number;
+  change: number;
+  percent_change: number;
+  high: number;
+  low: number;
+  open: number;
+  previous_close: number;
+  source: string;
 }
 
 export interface ResearchQueryRequest {

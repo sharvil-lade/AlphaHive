@@ -88,16 +88,49 @@ export default function Dashboard() {
   const [priceChange, setPriceChange] = useState(23.70);
   const [percentChange, setPercentChange] = useState(2.48);
 
+  const [chartData, setChartData] = useState<any[]>([]);
+
   useEffect(() => {
-    if (ticker === "NVDA") {
-      setLivePrice(978.80);
-      setPriceChange(23.70);
-      setPercentChange(2.48);
-    } else {
-      setLivePrice(168.40);
-      setPriceChange(-3.20);
-      setPercentChange(-1.86);
-    }
+    // Default static mock data first
+    setChartData(HISTORICAL_DATA[ticker] || HISTORICAL_DATA.NVDA);
+
+    const fetchLiveData = async () => {
+      try {
+        const host = "http://127.0.0.1:8000";
+        
+        // 1. Fetch Quote
+        const quoteResp = await fetch(`${host}/api/v1/stocks/quote?symbol=${ticker}`);
+        if (quoteResp.ok) {
+          const quote = await quoteResp.json();
+          setLivePrice(quote.price);
+          setPriceChange(quote.change);
+          setPercentChange(quote.percent_change);
+        }
+
+        // 2. Fetch History
+        const historyResp = await fetch(`${host}/api/v1/stocks/history?symbol=${ticker}`);
+        if (historyResp.ok) {
+          const history = await historyResp.json();
+          // Format dates for chart X-axis
+          const formatted = history.map((item: any) => {
+            const parts = item.date.split("-");
+            const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            const shortDate = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            return {
+              date: shortDate,
+              price: item.close,
+              volume: item.volume
+            };
+          });
+          setChartData(formatted);
+        }
+      } catch (err) {
+        // Fallback silently to static mock data on error (offline mode)
+        console.warn("Backend API not reachable, running in offline demo mode:", err);
+      }
+    };
+
+    fetchLiveData();
   }, [ticker]);
 
   // Run Simulated Agent Sequence
@@ -132,7 +165,7 @@ export default function Dashboard() {
     setTimeout(executeStep, 300);
   };
 
-  const currentChartData = HISTORICAL_DATA[ticker] || HISTORICAL_DATA.NVDA;
+  const currentChartData = chartData;
 
   return (
     <div className="flex-1 flex overflow-hidden">

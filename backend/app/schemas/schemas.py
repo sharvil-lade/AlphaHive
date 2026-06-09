@@ -119,6 +119,28 @@ class AlertSchema(AlertCreate):
         from_attributes = True
 
 
+# Quote and News API Schemas
+class QuoteResponse(BaseModel):
+    symbol: str
+    price: float
+    change: float
+    percent_change: float
+    high: float
+    low: float
+    open: float
+    previous_close: float
+    source: str
+
+
+class NewsResponse(BaseModel):
+    symbol: str
+    headline: str
+    summary: str
+    url: str
+    source: str
+    published_at: str
+
+
 # Investment Report Schemas
 class InvestmentReportSchema(BaseModel):
     id: UUID
