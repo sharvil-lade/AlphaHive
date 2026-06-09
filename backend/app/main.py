@@ -40,6 +40,7 @@ app = FastAPI(
 )
 
 from backend.app.api.v1.endpoints.stocks import router as stocks_router
+from backend.app.api.v1.endpoints.indicators import router as indicators_router
 
 # Enable CORS for Next.js frontend communication
 app.add_middleware(
@@ -52,6 +53,7 @@ app.add_middleware(
 
 # Register routers
 app.include_router(stocks_router, prefix=f"{settings.API_V1_STR}/stocks", tags=["stocks"])
+app.include_router(indicators_router, prefix=f"{settings.API_V1_STR}/indicators", tags=["indicators"])
 
 
 @app.get("/")

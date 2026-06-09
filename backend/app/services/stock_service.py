@@ -309,7 +309,6 @@ class StockService:
             logger.error(f"Error fetching history from yfinance fallback for {symbol}: {e}")
         
         # Static mock return if network is offline
-        import datetime
         today = datetime.date.today()
         return [
             {
@@ -322,7 +321,7 @@ class StockService:
                 "volume": 1000000,
                 "source": "mocked_fallback"
             }
-            for i in reversed(range(10))
+            for i in reversed(range(100))
         ]
 
 

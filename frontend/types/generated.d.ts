@@ -72,6 +72,14 @@ export interface NewsResponse {
   published_at: string;
 }
 
+export interface PivotDetails {
+  pivot: number;
+  r1: number;
+  s1: number;
+  r2: number;
+  s2: number;
+}
+
 export interface PortfolioBase {
   session_id: string;
   name: string;
@@ -132,6 +140,11 @@ export interface ResearchQueryRequest {
   query: string;
 }
 
+export interface SignalDetail {
+  score: number;
+  signal: string;
+}
+
 export interface StockBase {
   /** Stock Ticker Symbol */
   symbol: string;
@@ -188,6 +201,24 @@ export interface StockSchema {
   name: string;
   sector?: string | null;
   industry?: string | null;
+}
+
+export interface TASignals {
+  rsi: SignalDetail;
+  macd: SignalDetail;
+  trends: SignalDetail;
+  bollinger: SignalDetail;
+  volume: SignalDetail;
+}
+
+export interface TechnicalPostureResponse {
+  symbol: string;
+  close: number;
+  score: number;
+  rating: string;
+  signals: TASignals;
+  summary: string;
+  pivots?: PivotDetails | null;
 }
 
 export interface WatchlistCreate {

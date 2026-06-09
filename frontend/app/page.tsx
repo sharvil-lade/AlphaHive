@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import type { TechnicalPostureResponse } from "../types/generated";
 import {
   TrendingUp,
   Search,
@@ -51,6 +52,52 @@ const HISTORICAL_DATA: Record<string, any[]> = {
   ]
 };
 
+// Fallback Mock data for Technical Posture evaluation
+const MOCK_TA_POSTURE: Record<string, any> = {
+  NVDA: {
+    symbol: "NVDA",
+    close: 978.80,
+    score: 85,
+    rating: "BUY",
+    summary: "Technical indicators suggest robust bullish momentum for NVDA. Moving averages trend is supportive.",
+    signals: {
+      rsi: { score: 15, signal: "accumulating_bullish" },
+      macd: { score: 20, signal: "bullish_crossover" },
+      trends: { score: 30, signal: "strong_bullish_trend" },
+      bollinger: { score: 15, signal: "overextended_bullish" },
+      volume: { score: 10, signal: "high_volume_accumulation" }
+    },
+    pivots: {
+      pivot: 960.50,
+      r1: 985.00,
+      s1: 945.00,
+      r2: 1010.00,
+      s2: 920.00
+    }
+  },
+  TSLA: {
+    symbol: "TSLA",
+    close: 168.40,
+    score: -45,
+    rating: "SELL",
+    summary: "Technical indicators indicate severe bearish momentum or overextension for TSLA. Exercise caution.",
+    signals: {
+      rsi: { score: -15, signal: "overbought_bearish" },
+      macd: { score: -20, signal: "bearish_crossover" },
+      trends: { score: -20, signal: "strong_bearish_trend" },
+      bollinger: { score: -15, signal: "overextended_bearish" },
+      volume: { score: -10, signal: "high_volume_distribution" }
+    },
+    pivots: {
+      pivot: 172.10,
+      r1: 178.55,
+      s1: 164.30,
+      r2: 185.20,
+      s2: 157.60
+    }
+  }
+};
+
 // Simulated Multi-Agent Execution Steps
 const AGENT_SIMULATION_STEPS = [
   { agent: "Research Agent", msg: "Scanning Finnhub metrics and basic fundamentals...", duration: 800 },
@@ -69,6 +116,9 @@ export default function Dashboard() {
   const [ticker, setTicker] = useState("NVDA");
   const [searchQuery, setSearchQuery] = useState("Should I buy Nvidia stock right now?");
   const [currentTab, setCurrentTab] = useState("research");
+  
+  // Technical Analysis Posture State
+  const [taPosture, setTaPosture] = useState<TechnicalPostureResponse | null>(null);
   
   // Agent Execution State
   const [isRunning, setIsRunning] = useState(false);
@@ -93,6 +143,7 @@ export default function Dashboard() {
   useEffect(() => {
     // Default static mock data first
     setChartData(HISTORICAL_DATA[ticker] || HISTORICAL_DATA.NVDA);
+    setTaPosture(MOCK_TA_POSTURE[ticker] || MOCK_TA_POSTURE.NVDA);
 
     const fetchLiveData = async () => {
       try {
@@ -105,6 +156,13 @@ export default function Dashboard() {
           setLivePrice(quote.price);
           setPriceChange(quote.change);
           setPercentChange(quote.percent_change);
+
+          // Fetch Technical Posture
+          const taResp = await fetch(`${host}/api/v1/indicators/ta?symbol=${ticker}`);
+          if (taResp.ok) {
+            const taData = await taResp.json();
+            setTaPosture(taData);
+          }
         }
 
         // 2. Fetch History
@@ -127,6 +185,7 @@ export default function Dashboard() {
       } catch (err) {
         // Fallback silently to static mock data on error (offline mode)
         console.warn("Backend API not reachable, running in offline demo mode:", err);
+        setTaPosture(MOCK_TA_POSTURE[ticker] || MOCK_TA_POSTURE.NVDA);
       }
     };
 
@@ -300,9 +359,28 @@ export default function Dashboard() {
             <div className="glass-panel p-4 rounded-xl flex items-center justify-between">
               <div>
                 <div className="text-[10px] text-mutedText font-semibold tracking-wider">TA posture</div>
-                <div className="text-sm font-bold mt-1 text-bullish">Strong Bullish</div>
+                <div className={`text-sm font-black mt-1 ${
+                  (taPosture?.rating || "HOLD") === "BUY" 
+                    ? "text-bullish" 
+                    : (taPosture?.rating || "HOLD") === "SELL" 
+                      ? "text-bearish" 
+                      : "text-yellow-500"
+                }`}>
+                  {(taPosture?.rating || "HOLD") === "BUY" 
+                    ? "Bullish" 
+                    : (taPosture?.rating || "HOLD") === "SELL" 
+                      ? "Bearish" 
+                      : "Neutral"}{" "}
+                  ({taPosture?.score && taPosture.score >= 0 ? "+" : ""}{taPosture?.score ?? 0})
+                </div>
               </div>
-              <Activity className="w-4 h-4 text-bullish animate-pulse" />
+              <Activity className={`w-4 h-4 animate-pulse ${
+                (taPosture?.rating || "HOLD") === "BUY" 
+                  ? "text-bullish" 
+                  : (taPosture?.rating || "HOLD") === "SELL" 
+                    ? "text-bearish" 
+                    : "text-yellow-500"
+              }`} />
             </div>
           </div>
 
@@ -391,6 +469,161 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+
+          {/* Technical Analysis Engine details */}
+          {taPosture && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-slide-up">
+              {/* Column 1: Core Oscillators */}
+              <div className="glass-panel p-5 rounded-2xl space-y-4">
+                <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5 border-b border-terminal-border pb-2">
+                  <Activity className="w-4 h-4 text-cyanGlow" /> Core Oscillators
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* RSI */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="text-xs font-bold text-white">RSI (14)</div>
+                      <div className="text-[10px] text-mutedText mt-0.5 uppercase">
+                        Signal: {taPosture.signals?.rsi?.signal?.replace(/_/g, " ") || "neutral"}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      taPosture.signals?.rsi?.score > 0 
+                        ? "text-bullish bg-bullish/10 border border-bullish/20" 
+                        : taPosture.signals?.rsi?.score < 0 
+                          ? "text-bearish bg-bearish/10 border border-bearish/20" 
+                          : "text-gray-400 bg-gray-400/10 border border-gray-400/20"
+                    }`}>
+                      Score: {taPosture.signals?.rsi?.score ?? 0}
+                    </span>
+                  </div>
+
+                  {/* MACD */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="text-xs font-bold text-white">MACD (12, 26, 9)</div>
+                      <div className="text-[10px] text-mutedText mt-0.5 uppercase">
+                        Signal: {taPosture.signals?.macd?.signal?.replace(/_/g, " ") || "neutral"}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      taPosture.signals?.macd?.score > 0 
+                        ? "text-bullish bg-bullish/10 border border-bullish/20" 
+                        : taPosture.signals?.macd?.score < 0 
+                          ? "text-bearish bg-bearish/10 border border-bearish/20" 
+                          : "text-gray-400 bg-gray-400/10 border border-gray-400/20"
+                    }`}>
+                      Score: {taPosture.signals?.macd?.score ?? 0}
+                    </span>
+                  </div>
+
+                  {/* Bollinger Bands */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="text-xs font-bold text-white">Bollinger Bands (20, 2)</div>
+                      <div className="text-[10px] text-mutedText mt-0.5 uppercase">
+                        Signal: {taPosture.signals?.bollinger?.signal?.replace(/_/g, " ") || "neutral"}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      taPosture.signals?.bollinger?.score > 0 
+                        ? "text-bullish bg-bullish/10 border border-bullish/20" 
+                        : taPosture.signals?.bollinger?.score < 0 
+                          ? "text-bearish bg-bearish/10 border border-bearish/20" 
+                          : "text-gray-400 bg-gray-400/10 border border-gray-400/20"
+                    }`}>
+                      Score: {taPosture.signals?.bollinger?.score ?? 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 2: Moving Averages Trend */}
+              <div className="glass-panel p-5 rounded-2xl space-y-4">
+                <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5 border-b border-terminal-border pb-2">
+                  <TrendingUp className="w-4 h-4 text-cyanGlow" /> Trend System
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* Overall Trend Score */}
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="text-xs font-bold text-white">Consensus Trend</div>
+                      <div className="text-[10px] text-mutedText mt-0.5 uppercase">
+                        {taPosture.signals?.trends?.signal?.replace(/_/g, " ") || "neutral"}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      taPosture.signals?.trends?.score > 0 
+                        ? "text-bullish bg-bullish/10 border border-bullish/20" 
+                        : taPosture.signals?.trends?.score < 0 
+                          ? "text-bearish bg-bearish/10 border border-bearish/20" 
+                          : "text-gray-400 bg-gray-400/10 border border-gray-400/20"
+                    }`}>
+                      Score: {taPosture.signals?.trends?.score ?? 0}
+                    </span>
+                  </div>
+
+                  {/* Volume Confirmation */}
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="text-xs font-bold text-white">Volume Confirmation</div>
+                      <div className="text-[10px] text-mutedText mt-0.5 uppercase">
+                        {taPosture.signals?.volume?.signal?.replace(/_/g, " ") || "neutral"}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      taPosture.signals?.volume?.score > 0 
+                        ? "text-bullish bg-bullish/10 border border-bullish/20" 
+                        : taPosture.signals?.volume?.score < 0 
+                          ? "text-bearish bg-bearish/10 border border-bearish/20" 
+                          : "text-gray-400 bg-gray-400/10 border border-gray-400/20"
+                    }`}>
+                      Score: {taPosture.signals?.volume?.score ?? 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 3: Pivot Point Support & Resistance */}
+              <div className="glass-panel p-5 rounded-2xl space-y-4">
+                <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5 border-b border-terminal-border pb-2">
+                  <BarChart3 className="w-4 h-4 text-cyanGlow" /> Pivot Boundaries (Classic)
+                </h3>
+                
+                {taPosture.pivots ? (
+                  <div className="grid grid-cols-5 gap-2 text-center text-[10px] font-mono">
+                    <div className="p-1.5 bg-bearish/5 border border-bearish/20 rounded">
+                      <span className="text-bearish font-black block">R2</span>
+                      <span className="text-gray-300 font-bold mt-1 block">${taPosture.pivots.r2.toFixed(2)}</span>
+                    </div>
+                    <div className="p-1.5 bg-bearish/5 border border-bearish/20 rounded">
+                      <span className="text-bearish/80 block">R1</span>
+                      <span className="text-gray-200 mt-1 block">${taPosture.pivots.r1.toFixed(2)}</span>
+                    </div>
+                    <div className="p-1.5 bg-cyanGlow/5 border border-cyanGlow/25 rounded">
+                      <span className="text-cyanGlow font-black block">P</span>
+                      <span className="text-white font-bold mt-1 block">${taPosture.pivots.pivot.toFixed(2)}</span>
+                    </div>
+                    <div className="p-1.5 bg-bullish/5 border border-bullish/20 rounded">
+                      <span className="text-bullish/80 block">S1</span>
+                      <span className="text-gray-200 mt-1 block">${taPosture.pivots.s1.toFixed(2)}</span>
+                    </div>
+                    <div className="p-1.5 bg-bullish/5 border border-bullish/20 rounded">
+                      <span className="text-bullish font-black block">S2</span>
+                      <span className="text-gray-300 font-bold mt-1 block">${taPosture.pivots.s2.toFixed(2)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-mutedText text-center py-4">No pivots calculated</div>
+                )}
+                <div className="text-[10px] text-mutedText leading-relaxed">
+                  Support and resistance bounds calculated based on previous daily high, low, and closing metrics.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 3. Compiled Investment Report Memo */}
           {showMemo && (

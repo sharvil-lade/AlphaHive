@@ -19,6 +19,16 @@ def event_loop():
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def clean_database():
     """Ensure database is clean before running tests and teardown afterwards."""
+    # Flush Redis cache to prevent cross-test contamination
+    from redis.asyncio import Redis
+    try:
+        redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        await redis_client.flushdb()
+        await redis_client.aclose()
+    except Exception as e:
+        import logging
+        logging.getLogger("test-setup").warning(f"Could not flush Redis: {e}")
+
     # Create engine mapped specifically to test database connection URL
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
     

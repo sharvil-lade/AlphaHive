@@ -190,3 +190,36 @@ class AgentRunDetailResponse(BaseModel):
     logs: List[AgentExecutionLog] = []
     report: Optional[InvestmentReportSchema] = None
     telemetry: Dict[str, Any] = {}
+
+
+# Technical Indicators scoring schemas
+class SignalDetail(BaseModel):
+    score: int
+    signal: str
+
+
+class TASignals(BaseModel):
+    rsi: SignalDetail
+    macd: SignalDetail
+    trends: SignalDetail
+    bollinger: SignalDetail
+    volume: SignalDetail
+
+
+class PivotDetails(BaseModel):
+    pivot: float
+    r1: float
+    s1: float
+    r2: float
+    s2: float
+
+
+class TechnicalPostureResponse(BaseModel):
+    symbol: str
+    close: float
+    score: int
+    rating: str
+    signals: TASignals
+    summary: str
+    pivots: Optional[PivotDetails] = None
+
