@@ -15,9 +15,11 @@ async def client():
         yield ac
 
 
+import uuid
+
 async def test_portfolio_lifecycle_endpoints(client):
     """Test entire CRUD lifecycle for portfolio holdings and summary calculations."""
-    session_id = "test_portfolio_session_999"
+    session_id = f"test_portfolio_session_{uuid.uuid4().hex}"
     
     # 1. Get or create default portfolio
     get_resp = await client.get(f"/api/v1/portfolios?session_id={session_id}")

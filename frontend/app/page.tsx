@@ -15,7 +15,14 @@ import {
   addPortfolioHolding,
   updatePortfolioHolding,
   deletePortfolioHolding,
-  fetchPortfolioSummary
+  fetchPortfolioSummary,
+  fetchWatchlist,
+  addToWatchlist,
+  deleteFromWatchlist,
+  fetchAlerts,
+  createAlert,
+  deleteAlert,
+  runAlertCheck
 } from "../services/api";
 import { useAgentStream } from "../hooks/useAgentStream";
 import {
@@ -243,6 +250,34 @@ export default function Dashboard() {
   const [editHoldingShares, setEditHoldingShares] = useState("");
   const [editHoldingPrice, setEditHoldingPrice] = useState("");
 
+  // Watchlist & Alerts States
+  const [watchlist, setWatchlist] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [triggeredAlertsLog, setTriggeredAlertsLog] = useState<any[]>([]);
+  const [newWatchlistSymbol, setNewWatchlistSymbol] = useState("");
+  const [newAlertSymbol, setNewAlertSymbol] = useState("");
+  const [newAlertTriggerType, setNewAlertTriggerType] = useState("price_above");
+  const [newAlertTriggerValue, setNewAlertTriggerValue] = useState("");
+  const [alertsActiveOnly, setAlertsActiveOnly] = useState(true);
+
+  const loadWatchlistAndAlerts = async () => {
+    if (!sessionId) return;
+    try {
+      const wl = await fetchWatchlist(sessionId);
+      setWatchlist(wl);
+      const al = await fetchAlerts(sessionId, alertsActiveOnly);
+      setAlerts(al);
+    } catch (e) {
+      console.error("Failed to load watchlist/alerts:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (sessionId) {
+      loadWatchlistAndAlerts();
+    }
+  }, [sessionId, alertsActiveOnly]);
+
   const loadPortfolio = async () => {
     if (!sessionId) return;
     try {
@@ -301,6 +336,68 @@ export default function Dashboard() {
       loadPortfolio();
     } catch (err) {
       console.error("Failed to delete position:", err);
+    }
+  };
+
+  const handleAddToWatchlist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWatchlistSymbol || !sessionId) return;
+    try {
+      await addToWatchlist(sessionId, newWatchlistSymbol.toUpperCase().trim());
+      setNewWatchlistSymbol("");
+      loadWatchlistAndAlerts();
+    } catch (e) {
+      console.error("Failed to add to watchlist:", e);
+    }
+  };
+
+  const handleRemoveFromWatchlist = async (symbol: string) => {
+    if (!sessionId) return;
+    try {
+      await deleteFromWatchlist(sessionId, symbol);
+      loadWatchlistAndAlerts();
+    } catch (e) {
+      console.error("Failed to delete from watchlist:", e);
+    }
+  };
+
+  const handleCreateAlert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAlertSymbol || !newAlertTriggerType || !newAlertTriggerValue || !sessionId) return;
+    try {
+      await createAlert(
+        sessionId,
+        newAlertSymbol.toUpperCase().trim(),
+        newAlertTriggerType,
+        parseFloat(newAlertTriggerValue)
+      );
+      setNewAlertSymbol("");
+      setNewAlertTriggerValue("");
+      loadWatchlistAndAlerts();
+    } catch (e) {
+      console.error("Failed to create alert:", e);
+    }
+  };
+
+  const handleDeleteAlert = async (alertId: string) => {
+    if (!sessionId) return;
+    try {
+      await deleteAlert(sessionId, alertId);
+      loadWatchlistAndAlerts();
+    } catch (e) {
+      console.error("Failed to delete alert:", e);
+    }
+  };
+
+  const handleTriggerAlertCheck = async () => {
+    try {
+      const triggered = await runAlertCheck();
+      if (triggered && triggered.length > 0) {
+        setTriggeredAlertsLog((prev) => [...triggered, ...prev]);
+      }
+      loadWatchlistAndAlerts();
+    } catch (e) {
+      console.error("Failed to execute alert checks:", e);
     }
   };
 
@@ -1354,6 +1451,222 @@ export default function Dashboard() {
                         )}
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : currentTab === "alerts" ? (
+            <div className="space-y-6">
+              {/* Alert Notifications banner for triggered items */}
+              {triggeredAlertsLog.length > 0 && (
+                <div className="glass-panel p-4 rounded-xl border border-bearish/30 bg-bearish/5 space-y-2 animate-slide-up">
+                  <div className="flex justify-between items-center border-b border-bearish/25 pb-1">
+                    <h4 className="text-xs font-bold text-bearish flex items-center gap-1.5 uppercase">
+                      <AlertTriangle className="w-4 h-4" /> Real-time Alert Triggers
+                    </h4>
+                    <button 
+                      onClick={() => setTriggeredAlertsLog([])}
+                      className="text-[10px] text-mutedText hover:text-white font-semibold"
+                    >
+                      Clear Log
+                    </button>
+                  </div>
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                    {triggeredAlertsLog.map((t, idx) => (
+                      <div key={idx} className="text-[11px] font-mono flex justify-between text-gray-300">
+                        <span>
+                          Stock <span className="text-white font-bold">{t.symbol}</span> crossed alert parameter <span className="text-cyanGlow font-bold">{t.trigger_type}</span>: Spot was <span className="text-bearish font-black">${t.current_value.toFixed(2)}</span> (Trigger: {t.trigger_value.toFixed(2)})
+                        </span>
+                        <span className="text-mutedText text-[9px]">{new Date(t.triggered_at).toLocaleTimeString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Grid with 2 columns: Watchlist and Alerts */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Watchlist card (Col 1) */}
+                <div className="glass-panel p-6 rounded-2xl space-y-4">
+                  <div className="flex justify-between items-center border-b border-terminal-border pb-3">
+                    <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5">
+                      <ListTodo className="w-4 h-4 text-cyanGlow" /> Watchlist Tracking
+                    </h3>
+                  </div>
+
+                  <form onSubmit={handleAddToWatchlist} className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={newWatchlistSymbol}
+                      onChange={e => setNewWatchlistSymbol(e.target.value.toUpperCase())}
+                      placeholder="Enter Stock Symbol (e.g. AAPL)" 
+                      className="flex-1 h-9 bg-terminal-dark border border-terminal-border rounded px-3 text-xs text-white uppercase focus:outline-none focus:border-cyanGlow"
+                      required
+                    />
+                    <button 
+                      type="submit"
+                      className="px-3 h-9 bg-cyanGlow text-background text-xs font-bold rounded hover:bg-cyanGlow/90 transition-all"
+                    >
+                      Add
+                    </button>
+                  </form>
+
+                  <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                    {watchlist.length === 0 ? (
+                      <div className="text-mutedText italic text-center py-6 text-xs">No watchlisted assets</div>
+                    ) : (
+                      watchlist.map((item) => (
+                        <div key={item.id} className="p-3 bg-terminal-dark border border-terminal-border rounded-xl flex justify-between items-center hover:border-cyanGlow/30 transition-all">
+                          <button
+                            onClick={() => {
+                              setTicker(item.symbol);
+                              setCurrentTab("research");
+                            }}
+                            className="text-xs font-bold text-white hover:text-cyanGlow transition-all font-mono"
+                          >
+                            {item.symbol}
+                          </button>
+                          <button 
+                            onClick={() => handleRemoveFromWatchlist(item.symbol)}
+                            className="text-bearish text-[11px] font-bold hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Alerts config card (Col 2 & 3) */}
+                <div className="glass-panel p-6 rounded-2xl lg:col-span-2 space-y-6">
+                  <div className="flex justify-between items-center border-b border-terminal-border pb-3">
+                    <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5">
+                      <Cpu className="w-4 h-4 text-cyanGlow" /> Alert Configurations
+                    </h3>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleTriggerAlertCheck}
+                        className="px-2.5 py-1 rounded bg-gradient-to-r from-cyanGlow to-bullish text-background text-[10px] font-bold hover:opacity-90 transition-all flex items-center gap-1"
+                      >
+                        <Play className="w-3 h-3 text-background fill-background" /> Run Scanner check
+                      </button>
+                      <button
+                        onClick={() => setAlertsActiveOnly(a => !a)}
+                        className="px-2.5 py-1 rounded bg-terminal-hover border border-terminal-border text-gray-300 text-[10px] font-bold hover:text-white transition-all"
+                      >
+                        {alertsActiveOnly ? "Show All" : "Show Active Only"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Create alert form */}
+                  <form onSubmit={handleCreateAlert} className="p-4 rounded-xl bg-terminal-dark/50 border border-terminal-border space-y-3">
+                    <h4 className="text-[11px] font-bold text-white uppercase">Declare New Watchlist Alert</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] text-mutedText block mb-1">Stock Ticker</label>
+                        <select
+                          value={newAlertSymbol}
+                          onChange={e => setNewAlertSymbol(e.target.value)}
+                          className="w-full h-8 bg-terminal-dark border border-terminal-border rounded px-2 text-xs text-white focus:outline-none focus:border-cyanGlow font-mono"
+                          required
+                        >
+                          <option value="">Select Asset...</option>
+                          {watchlist.map(w => (
+                            <option key={w.id} value={w.symbol}>{w.symbol}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-mutedText block mb-1">Trigger condition</label>
+                        <select
+                          value={newAlertTriggerType}
+                          onChange={e => setNewAlertTriggerType(e.target.value)}
+                          className="w-full h-8 bg-terminal-dark border border-terminal-border rounded px-2 text-xs text-white focus:outline-none focus:border-cyanGlow"
+                          required
+                        >
+                          <option value="price_above">Price Spot Above ($)</option>
+                          <option value="price_below">Price Spot Below ($)</option>
+                          <option value="rsi_above">Technical RSI Above</option>
+                          <option value="rsi_below">Technical RSI Below</option>
+                          <option value="sentiment_drop">Sentiment Score Below</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-mutedText block mb-1">Trigger Threshold</label>
+                        <input 
+                          type="number"
+                          step="any"
+                          value={newAlertTriggerValue}
+                          onChange={e => setNewAlertTriggerValue(e.target.value)}
+                          placeholder="e.g. 150.00 / 30 / 60"
+                          className="w-full h-8 bg-terminal-dark border border-terminal-border rounded px-2 text-xs text-white focus:outline-none focus:border-cyanGlow font-mono"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button 
+                        type="submit"
+                        className="px-3 py-1.5 bg-cyanGlow text-background text-[11px] font-bold rounded hover:bg-cyanGlow/90 transition-all"
+                      >
+                        Create Alert
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Configured alerts table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse font-mono">
+                      <thead>
+                        <tr className="border-b border-terminal-border text-[10px] text-mutedText uppercase tracking-wider font-sans">
+                          <th className="py-2 px-4">Symbol</th>
+                          <th className="py-2 px-4">Condition</th>
+                          <th className="py-2 px-4">Trigger Bound</th>
+                          <th className="py-2 px-4">Status</th>
+                          <th className="py-2 px-4">Created At</th>
+                          <th className="py-2 px-4">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {alerts.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="text-center py-8 text-mutedText italic text-xs font-sans">
+                              No configured alerts found. Ensure stock items are watchlisted to configure alerts.
+                            </td>
+                          </tr>
+                        ) : (
+                          alerts.map((al) => (
+                            <tr key={al.id} className="border-b border-terminal-border hover:bg-terminal-hover/20">
+                              <td className="py-3 px-4 font-bold text-white">{al.symbol}</td>
+                              <td className="py-3 px-4 text-cyanGlow">{al.trigger_type.replace(/_/g, " ")}</td>
+                              <td className="py-3 px-4 font-bold text-gray-200">{al.trigger_value.toFixed(2)}</td>
+                              <td className="py-3 px-4">
+                                <span className={`text-[10px] px-2 py-0.5 rounded font-sans font-bold ${
+                                  al.is_active 
+                                    ? "text-bullish bg-bullish/10 border border-bullish/25" 
+                                    : "text-mutedText bg-terminal-hover border border-terminal-border"
+                                }`}>
+                                  {al.is_active ? "Active" : "Triggered"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-mutedText text-[10px]">
+                                {new Date(al.created_at).toLocaleDateString()}
+                              </td>
+                              <td className="py-3 px-4 font-sans">
+                                <button 
+                                  onClick={() => handleDeleteAlert(al.id)}
+                                  className="text-bearish hover:underline text-[11px] font-bold"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>

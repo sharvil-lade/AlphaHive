@@ -102,3 +102,63 @@ export async function fetchPortfolioSummary(sessionId: string): Promise<any> {
   return res.json();
 }
 
+export async function fetchWatchlist(sessionId: string): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/watchlist?session_id=${sessionId}`);
+  if (!res.ok) throw new Error(`Failed to fetch watchlist: ${res.statusText}`);
+  return res.json();
+}
+
+export async function addToWatchlist(sessionId: string, symbol: string): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/watchlist?session_id=${sessionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol }),
+  });
+  if (!res.ok) throw new Error(`Failed to add symbol to watchlist: ${res.statusText}`);
+  return res.json();
+}
+
+export async function deleteFromWatchlist(sessionId: string, symbol: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/watchlist/${symbol}?session_id=${sessionId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Failed to delete symbol from watchlist: ${res.statusText}`);
+}
+
+export async function fetchAlerts(sessionId: string, activeOnly: boolean = true): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/alerts?session_id=${sessionId}&active_only=${activeOnly}`);
+  if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.statusText}`);
+  return res.json();
+}
+
+export async function createAlert(
+  sessionId: string,
+  symbol: string,
+  triggerType: string,
+  triggerValue: number
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/alerts?session_id=${sessionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol, trigger_type: triggerType, trigger_value: triggerValue }),
+  });
+  if (!res.ok) throw new Error(`Failed to create alert: ${res.statusText}`);
+  return res.json();
+}
+
+export async function deleteAlert(sessionId: string, alertId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/alerts/${alertId}?session_id=${sessionId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Failed to cancel alert: ${res.statusText}`);
+}
+
+export async function runAlertCheck(): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/alerts/check`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to execute alerts scanner: ${res.statusText}`);
+  return res.json();
+}
+
+
