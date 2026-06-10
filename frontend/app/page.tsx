@@ -3,6 +3,18 @@
 import React, { useState, useEffect } from "react";
 import type { TechnicalPostureResponse, SentimentResponse } from "../types/generated";
 import {
+  fetchQuote,
+  fetchProfile,
+  fetchHistory,
+  fetchTechnicalPosture,
+  fetchSentiment,
+  runAgentWorkflow,
+  fetchReportsHistory,
+  fetchReportDetail,
+  getDownloadUrl
+} from "../services/api";
+import { useAgentStream } from "../hooks/useAgentStream";
+import {
   TrendingUp,
   Search,
   Cpu,
@@ -147,6 +159,40 @@ const AGENT_SIMULATION_STEPS = [
   { agent: "Decision Agent", msg: "Memo compiled successfully. Final Verdict: BUY.", duration: 500 }
 ];
 
+const renderMarkdown = (markdown: string) => {
+  if (!markdown) return null;
+  let html = markdown
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  html = html.replace(/^&gt;\s+(.*)$/gm, '<blockquote class="border-l-4 border-cyanGlow/50 pl-4 py-1 my-2 bg-cyanGlow/5 italic text-gray-300">$1</blockquote>');
+  html = html.replace(/^#\s+(.*)$/gm, '<h1 class="text-xl font-black text-white mt-6 mb-3 border-b border-terminal-border pb-2">$1</h1>');
+  html = html.replace(/^##\s+(.*)$/gm, '<h2 class="text-base font-bold text-cyanGlow mt-5 mb-2">$1</h2>');
+  html = html.replace(/^###\s+(.*)$/gm, '<h3 class="text-sm font-semibold text-gray-200 mt-4 mb-2">$1</h3>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-extrabold">$1</strong>');
+  html = html.replace(/^\*\s+(.*)$/gm, '<li class="list-disc list-inside ml-4 my-1 text-gray-300">$1</li>');
+  html = html.replace(/^-\s+(.*)$/gm, '<li class="list-disc list-inside ml-4 my-1 text-gray-300">$1</li>');
+  html = html.replace(/^---$/gm, '<hr class="border-terminal-border my-6" />');
+
+  const paragraphs = html.split('\n');
+  const processed = paragraphs.map(p => {
+    p = p.trim();
+    if (!p) return '';
+    if (p.startsWith('<h') || p.startsWith('<li') || p.startsWith('<hr') || p.startsWith('<blockquote') || p.startsWith('</blockquote')) {
+      return p;
+    }
+    return `<p class="my-2 text-gray-300">${p}</p>`;
+  });
+
+  return (
+    <div 
+      className="markdown-content space-y-2 text-xs leading-relaxed text-gray-300 font-sans"
+      dangerouslySetInnerHTML={{ __html: processed.join('\n') }} 
+    />
+  );
+};
+
 export default function Dashboard() {
   const [ticker, setTicker] = useState("NVDA");
   const [searchQuery, setSearchQuery] = useState("Should I buy Nvidia stock right now?");
@@ -160,9 +206,14 @@ export default function Dashboard() {
   
   // Agent Execution State
   const [isRunning, setIsRunning] = useState(false);
-  const [activeStep, setActiveStep] = useState<number>(-1);
   const [agentLogs, setAgentLogs] = useState<any[]>([]);
   const [showMemo, setShowMemo] = useState(true);
+
+  // Session & History state
+  const [sessionId, setSessionId] = useState<string>("");
+  const [reportsHistory, setReportsHistory] = useState<any[]>([]);
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [memoReport, setMemoReport] = useState<any>(null);
 
   // Health Telemetry
   const [telemetry, setTelemetry] = useState({
@@ -178,6 +229,110 @@ export default function Dashboard() {
 
   const [chartData, setChartData] = useState<any[]>([]);
 
+  // Initialize session ID
+  useEffect(() => {
+    let sid = localStorage.getItem("session_id");
+    if (!sid) {
+      sid = "session_" + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem("session_id", sid);
+    }
+    setSessionId(sid);
+  }, []);
+
+  // Fetch history when sessionId is set
+  useEffect(() => {
+    if (!sessionId) return;
+    const loadHistory = async () => {
+      try {
+        const history = await fetchReportsHistory(sessionId);
+        setReportsHistory(history);
+      } catch (e) {
+        console.error("Failed to load reports history:", e);
+      }
+    };
+    loadHistory();
+  }, [sessionId]);
+
+  // Load report detail
+  const loadCompletedReport = async (runId: string) => {
+    try {
+      const detail = await fetchReportDetail(runId);
+      setMemoReport(detail);
+      
+      // Update active ticker to match the report's ticker
+      if (detail.ticker && detail.ticker !== ticker) {
+        setTicker(detail.ticker);
+      }
+      setShowMemo(true);
+    } catch (e) {
+      console.error("Failed to load report detail:", e);
+    }
+  };
+
+  // Log streaming hook
+  useAgentStream(
+    currentRunId,
+    (log) => {
+      setAgentLogs((prev) => {
+        const exists = prev.some((l) => l.agent === log.node && l.msg === log.message);
+        if (exists) return prev;
+        return [
+          ...prev,
+          {
+            agent: log.node,
+            msg: log.message,
+            timestamp: new Date(log.timestamp).toLocaleTimeString(),
+            id: prev.length,
+          },
+        ];
+      });
+    },
+    async (doneMsg) => {
+      setIsRunning(false);
+      if (currentRunId) {
+        await loadCompletedReport(currentRunId);
+        // Refresh history list
+        if (sessionId) {
+          const history = await fetchReportsHistory(sessionId);
+          setReportsHistory(history);
+        }
+      }
+      setCurrentRunId(null);
+    },
+    (err) => {
+      console.error("Agent run streaming failed:", err);
+      setIsRunning(false);
+      setCurrentRunId(null);
+    }
+  );
+
+  // Active runner trigger
+  const runAgentWorkflowTrigger = async () => {
+    setIsRunning(true);
+    setAgentLogs([]);
+    setShowMemo(false);
+    setMemoReport(null);
+    
+    // Parse ticker from searchQuery or use active state
+    let symbol = ticker;
+    const match = searchQuery.match(/\b([A-Za-z]{2,5})\b/);
+    if (match) {
+      const candidate = match[1].toUpperCase();
+      if (["AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "GOOGL", "META"].includes(candidate)) {
+        symbol = candidate;
+        setTicker(candidate);
+      }
+    }
+    
+    try {
+      const run = await runAgentWorkflow(symbol, sessionId);
+      setCurrentRunId(run.id);
+    } catch (e) {
+      console.error("Failed to start agent run:", e);
+      setIsRunning(false);
+    }
+  };
+
   useEffect(() => {
     // Default static mock data first
     setChartData(HISTORICAL_DATA[ticker] || HISTORICAL_DATA.NVDA);
@@ -186,35 +341,23 @@ export default function Dashboard() {
 
     const fetchLiveData = async () => {
       try {
-        const host = "http://127.0.0.1:8000";
-        
         // 1. Fetch Quote
-        const quoteResp = await fetch(`${host}/api/v1/stocks/quote?symbol=${ticker}`);
-        if (quoteResp.ok) {
-          const quote = await quoteResp.json();
-          setLivePrice(quote.price);
-          setPriceChange(quote.change);
-          setPercentChange(quote.percent_change);
+        const quote = await fetchQuote(ticker);
+        setLivePrice(quote.price);
+        setPriceChange(quote.change);
+        setPercentChange(quote.percent_change);
 
-          // Fetch Technical Posture
-          const taResp = await fetch(`${host}/api/v1/indicators/ta?symbol=${ticker}`);
-          if (taResp.ok) {
-            const taData = await taResp.json();
-            setTaPosture(taData);
-          }
+        // Fetch Technical Posture
+        const taData = await fetchTechnicalPosture(ticker);
+        setTaPosture(taData);
 
-          // Fetch Sentiment Posture
-          const sentimentResp = await fetch(`${host}/api/v1/sentiment/summary?symbol=${ticker}`);
-          if (sentimentResp.ok) {
-            const sentimentData = await sentimentResp.json();
-            setSentimentPosture(sentimentData);
-          }
-        }
+        // Fetch Sentiment Posture
+        const sentimentData = await fetchSentiment(ticker);
+        setSentimentPosture(sentimentData);
 
         // 2. Fetch History
-        const historyResp = await fetch(`${host}/api/v1/stocks/history?symbol=${ticker}`);
-        if (historyResp.ok) {
-          const history = await historyResp.json();
+        const history = await fetchHistory(ticker);
+        if (history && history.length > 0) {
           // Format dates for chart X-axis
           const formatted = history.map((item: any) => {
             const parts = item.date.split("-");
@@ -231,6 +374,7 @@ export default function Dashboard() {
       } catch (err) {
         // Fallback silently to static mock data on error (offline mode)
         console.warn("Backend API not reachable, running in offline demo mode:", err);
+        setChartData(HISTORICAL_DATA[ticker] || HISTORICAL_DATA.NVDA);
         setTaPosture(MOCK_TA_POSTURE[ticker] || MOCK_TA_POSTURE.NVDA);
         setSentimentPosture(MOCK_SENTIMENT_POSTURE[ticker] || MOCK_SENTIMENT_POSTURE.NVDA);
       }
@@ -239,37 +383,27 @@ export default function Dashboard() {
     fetchLiveData();
   }, [ticker]);
 
-  // Run Simulated Agent Sequence
-  const runAgentSimulation = () => {
-    setIsRunning(true);
-    setActiveStep(0);
-    setAgentLogs([]);
-    setShowMemo(false);
-
-    let stepIndex = 0;
-    
-    const executeStep = () => {
-      if (stepIndex < AGENT_SIMULATION_STEPS.length) {
-        const step = AGENT_SIMULATION_STEPS[stepIndex];
-        setAgentLogs(prev => [
-          ...prev, 
-          {
-            ...step,
-            timestamp: new Date().toLocaleTimeString(),
-            id: stepIndex
-          }
-        ]);
-        setActiveStep(stepIndex);
-        stepIndex++;
-        setTimeout(executeStep, step.duration);
-      } else {
-        setIsRunning(false);
-        setShowMemo(true);
+  // Live Telemetry check
+  useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/v1/health");
+        if (res.ok) {
+          const data = await res.json();
+          setTelemetry({
+            postgres: data.services?.database === "healthy" ? "connected" : "error",
+            redis: data.services?.redis === "healthy" ? "cached" : "error",
+            qdrant: data.services?.qdrant === "healthy" ? "synced" : "error"
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch server health telemetry:", e);
       }
     };
-
-    setTimeout(executeStep, 300);
-  };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const currentChartData = chartData;
 
@@ -317,6 +451,30 @@ export default function Dashboard() {
               );
             })}
           </nav>
+          {/* Recent Reports history list */}
+          <div className="mt-6 border-t border-terminal-border pt-4 overflow-y-auto max-h-[220px]">
+            <div className="text-[10px] font-bold text-mutedText uppercase tracking-wider mb-2">
+              Recent Reports
+            </div>
+            <div className="space-y-1">
+              {reportsHistory.length === 0 ? (
+                <div className="text-[10px] text-mutedText italic p-2">No reports run in session</div>
+              ) : (
+                reportsHistory.map((report) => (
+                  <button
+                    key={report.run_id}
+                    onClick={() => loadCompletedReport(report.run_id)}
+                    className="w-full text-left px-2 py-1.5 rounded text-[10px] font-mono hover:bg-terminal-hover text-gray-300 hover:text-cyanGlow transition-all flex justify-between items-center"
+                  >
+                    <span>{report.ticker} ({report.recommendation.toUpperCase()})</span>
+                    <span className="text-mutedText text-[8px]">
+                      {new Date(report.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
         </div>
 
         {/* System telemetry levels at bottom of sidebar */}
@@ -362,7 +520,7 @@ export default function Dashboard() {
               className="w-full h-10 pl-11 pr-24 rounded-lg bg-terminal-dark border border-terminal-border text-xs focus:outline-none focus:border-cyanGlow focus:ring-1 focus:ring-cyanGlow transition-all"
             />
             <button
-              onClick={runAgentSimulation}
+              onClick={runAgentWorkflowTrigger}
               disabled={isRunning}
               className="absolute right-1 top-1 h-8 px-4 rounded bg-cyanGlow hover:bg-cyanGlow/90 text-background text-xs font-bold flex items-center gap-1 transition-all disabled:opacity-50"
             >
@@ -524,7 +682,7 @@ export default function Dashboard() {
                     <Cpu className="w-8 h-8 text-terminal-border mb-2 animate-bounce" />
                     <span>No active agent runs.</span>
                     <button
-                      onClick={runAgentSimulation}
+                      onClick={runAgentWorkflowTrigger}
                       className="mt-3 px-3 py-1.5 rounded bg-cyanGlow/10 hover:bg-cyanGlow/20 text-cyanGlow text-[10px] font-bold border border-cyanGlow/20"
                     >
                       Trigger Demo Run
@@ -715,88 +873,115 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-mutedText font-semibold">Recommendation:</span>
                     <span className={`text-xs font-black uppercase px-3 py-1 rounded ${
-                      (sentimentPosture?.rating || "HOLD") === "BUY" 
+                      (memoReport?.report?.recommendation || sentimentPosture?.rating || "HOLD") === "BUY" 
                         ? "text-bullish bg-bullish/10 border border-bullish/20" 
-                        : (sentimentPosture?.rating || "HOLD") === "SELL" 
+                        : (memoReport?.report?.recommendation || sentimentPosture?.rating || "HOLD") === "SELL" 
                           ? "text-bearish bg-bearish/10 border border-bearish/20" 
                           : "text-yellow-500 bg-yellow-500/10 border border-yellow-500/20"
                     }`}>
-                      {sentimentPosture?.rating || "HOLD"}
+                      {memoReport?.report?.recommendation || sentimentPosture?.rating || "HOLD"}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-mutedText font-semibold">Confidence Score:</span>
                     <span className="text-sm font-black text-cyanGlow">
-                      {sentimentPosture?.score !== undefined ? Math.abs(sentimentPosture.score) : 50}/100
+                      {memoReport?.report?.confidence_score !== undefined 
+                        ? memoReport.report.confidence_score 
+                        : (sentimentPosture?.score !== undefined ? Math.abs(sentimentPosture.score) : 50)}/100
                     </span>
                   </div>
+
+                  {memoReport?.report && (
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={getDownloadUrl(memoReport.run_id, "pdf")}
+                        download
+                        className="px-3 py-1.5 border border-terminal-border rounded-lg bg-terminal-dark text-xs font-bold text-gray-300 hover:text-cyanGlow hover:bg-terminal-hover transition-all flex items-center gap-1.5"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-cyanGlow" /> PDF Download
+                      </a>
+                      <a
+                        href={getDownloadUrl(memoReport.run_id, "markdown")}
+                        download
+                        className="px-3 py-1.5 border border-terminal-border rounded-lg bg-terminal-dark text-xs font-bold text-gray-300 hover:text-cyanGlow hover:bg-terminal-hover transition-all flex items-center gap-1.5"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-cyanGlow" /> MD Download
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Memo Core Content */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-xs leading-relaxed">
-                <div className="lg:col-span-2 space-y-4">
-                  <div>
-                    <h4 className="font-bold text-white mb-1.5 flex items-center gap-1.5">
-                      <BookOpen className="w-3.5 h-3.5 text-cyanGlow" /> Executive Summary
+              {memoReport?.report?.content_markdown ? (
+                <div className="p-4 rounded-xl bg-terminal-dark border border-terminal-border overflow-x-auto">
+                  {renderMarkdown(memoReport.report.content_markdown)}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-xs leading-relaxed">
+                  <div className="lg:col-span-2 space-y-4">
+                    <div>
+                      <h4 className="font-bold text-white mb-1.5 flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-cyanGlow" /> Executive Summary
+                      </h4>
+                      <p className="text-gray-300">
+                        {sentimentPosture?.summary || "No sentiment summary loaded."}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-xl bg-bullish/5 border border-bullish/10">
+                        <h5 className="font-bold text-bullish mb-2 flex items-center gap-1">
+                          <TrendingUp className="w-3.5 h-3.5" /> Bullish Catalysts (Opportunities)
+                        </h5>
+                        <ul className="space-y-1.5 text-gray-300 list-disc list-inside">
+                          {sentimentPosture?.opportunities?.map((opp: string, i: number) => (
+                            <li key={i}>{opp}</li>
+                          )) || <li>No opportunities identified.</li>}
+                        </ul>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-bearish/5 border border-bearish/10">
+                        <h5 className="font-bold text-bearish mb-2 flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" /> Key Risks & Concerns (Threats)
+                        </h5>
+                        <ul className="space-y-1.5 text-gray-300 list-disc list-inside">
+                          {sentimentPosture?.threats?.map((threat: string, i: number) => (
+                            <li key={i}>{threat}</li>
+                          )) || <li>No threats identified.</li>}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quantitative breakdown side block */}
+                  <div className="p-4 rounded-xl bg-terminal-dark border border-terminal-border space-y-4">
+                    <h4 className="font-bold text-white mb-2 flex items-center gap-1.5">
+                      <BarChart3 className="w-3.5 h-3.5 text-cyanGlow" /> Core Financial Ratios
                     </h4>
-                    <p className="text-gray-300">
-                      {sentimentPosture?.summary || "No sentiment summary loaded."}
-                    </p>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl bg-bullish/5 border border-bullish/10">
-                      <h5 className="font-bold text-bullish mb-2 flex items-center gap-1">
-                        <TrendingUp className="w-3.5 h-3.5" /> Bullish Catalysts (Opportunities)
-                      </h5>
-                      <ul className="space-y-1.5 text-gray-300 list-disc list-inside">
-                        {sentimentPosture?.opportunities?.map((opp: string, i: number) => (
-                          <li key={i}>{opp}</li>
-                        )) || <li>No opportunities identified.</li>}
-                      </ul>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-bearish/5 border border-bearish/10">
-                      <h5 className="font-bold text-bearish mb-2 flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" /> Key Risks & Concerns (Threats)
-                      </h5>
-                      <ul className="space-y-1.5 text-gray-300 list-disc list-inside">
-                        {sentimentPosture?.threats?.map((threat: string, i: number) => (
-                          <li key={i}>{threat}</li>
-                        )) || <li>No threats identified.</li>}
-                      </ul>
+                    <div className="space-y-2.5 text-[11px] font-mono">
+                      <div className="flex justify-between border-b border-terminal-border pb-1.5">
+                        <span className="text-mutedText">P/E Ratio</span>
+                        <span className="text-gray-200">{ticker === "NVDA" ? "78.4" : "55.2"}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-terminal-border pb-1.5">
+                        <span className="text-mutedText">Gross Margin</span>
+                        <span className="text-gray-200">{ticker === "NVDA" ? "76.2%" : "17.4%"}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-terminal-border pb-1.5">
+                        <span className="text-mutedText">Beta (Volatility)</span>
+                        <span className="text-gray-200">{ticker === "NVDA" ? "1.85" : "2.10"}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-terminal-border pb-1.5">
+                        <span className="text-mutedText">10-K Risk Count</span>
+                        <span className="text-cyanGlow font-bold">14 citations</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                {/* Quantitative breakdown side block */}
-                <div className="p-4 rounded-xl bg-terminal-dark border border-terminal-border space-y-4">
-                  <h4 className="font-bold text-white mb-2 flex items-center gap-1.5">
-                    <BarChart3 className="w-3.5 h-3.5 text-cyanGlow" /> Core Financial Ratios
-                  </h4>
-
-                  <div className="space-y-2.5 text-[11px] font-mono">
-                    <div className="flex justify-between border-b border-terminal-border pb-1.5">
-                      <span className="text-mutedText">P/E Ratio</span>
-                      <span className="text-gray-200">{ticker === "NVDA" ? "78.4" : "55.2"}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-terminal-border pb-1.5">
-                      <span className="text-mutedText">Gross Margin</span>
-                      <span className="text-gray-200">{ticker === "NVDA" ? "76.2%" : "17.4%"}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-terminal-border pb-1.5">
-                      <span className="text-mutedText">Beta (Volatility)</span>
-                      <span className="text-gray-200">{ticker === "NVDA" ? "1.85" : "2.10"}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-terminal-border pb-1.5">
-                      <span className="text-mutedText">10-K Risk Count</span>
-                      <span className="text-cyanGlow font-bold">14 citations</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
