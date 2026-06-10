@@ -1,0 +1,39 @@
+import json
+import logging
+from datetime import datetime
+from typing import Dict, Any
+from redis.asyncio import Redis
+from backend.app.core.config import settings
+
+logger = logging.getLogger("agent-utils")
+
+redis_client = None
+
+def get_redis() -> Redis:
+    global redis_client
+    if redis_client is None:
+        redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    return redis_client
+
+async def log_agent_activity(
+    run_id: str,
+    node: str,
+    message: str,
+) -> Dict[str, Any]:
+    """Helper to log activity both into Redis for streaming and return the state log dict."""
+    log_entry = {
+        "node": node,
+        "message": message,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
+    # Push to Redis for live streaming (SSE)
+    try:
+        redis = get_redis()
+        cache_key = f"agent_run_logs:{run_id}"
+        await redis.rpush(cache_key, json.dumps(log_entry))
+        await redis.expire(cache_key, 86400)
+    except Exception as e:
+        logger.error(f"Failed to log activity to Redis for run {run_id}: {e}")
+        
+    return log_entry
