@@ -53,6 +53,48 @@ export interface AlertSchema {
   created_at: string;
 }
 
+export interface BacktestRequest {
+  symbol: string;
+  /** Strategy type: rsi, ema_crossover, macd_crossover */
+  strategy: string;
+  /** Initial portfolio cash amount */
+  initial_capital: number;
+  /** Historical duration range (e.g. 1mo, 3mo, 6mo, 1y) */
+  range_str: string;
+}
+
+export interface BacktestResponse {
+  symbol: string;
+  strategy: string;
+  initial_capital: number;
+  final_value: number;
+  total_return: number;
+  benchmark_return: number;
+  sharpe_ratio: number;
+  max_drawdown: number;
+  win_rate: number;
+  total_trades: number;
+  equity_curve: EquityPoint[];
+  trades: BacktestTrade[];
+}
+
+export interface BacktestTrade {
+  type: string;
+  date: string;
+  price: number;
+  shares: number;
+  value: number;
+  cash_remaining: number;
+  profit_loss: number;
+  profit_loss_pct: number;
+}
+
+export interface EquityPoint {
+  date: string;
+  portfolio_value: number;
+  benchmark_value: number;
+}
+
 export interface IndexResponse {
   symbol: string;
   form_type: string;

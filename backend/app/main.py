@@ -48,6 +48,8 @@ from backend.app.api.v1.endpoints.reports import router as reports_router
 from backend.app.api.v1.endpoints.portfolio import router as portfolio_router
 from backend.app.api.v1.endpoints.watchlist import router as watchlist_router
 from backend.app.api.v1.endpoints.alerts import router as alerts_router
+from backend.app.api.v1.endpoints.backtest import router as backtest_router
+
 
 # Enable CORS for Next.js frontend communication
 app.add_middleware(
@@ -68,6 +70,8 @@ app.include_router(reports_router, prefix=f"{settings.API_V1_STR}/reports", tags
 app.include_router(portfolio_router, prefix=f"{settings.API_V1_STR}/portfolios", tags=["portfolios"])
 app.include_router(watchlist_router, prefix=f"{settings.API_V1_STR}/watchlist", tags=["watchlist"])
 app.include_router(alerts_router, prefix=f"{settings.API_V1_STR}/alerts", tags=["alerts"])
+app.include_router(backtest_router, prefix=f"{settings.API_V1_STR}/backtest", tags=["backtest"])
+
 
 
 @app.get("/")

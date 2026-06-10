@@ -161,4 +161,25 @@ export async function runAlertCheck(): Promise<any[]> {
   return res.json();
 }
 
+export async function runBacktest(
+  symbol: string,
+  strategy: string,
+  initialCapital: number,
+  rangeStr: string
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/backtest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      symbol,
+      strategy,
+      initial_capital: initialCapital,
+      range_str: rangeStr,
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to run backtest: ${res.statusText}`);
+  return res.json();
+}
+
+
 

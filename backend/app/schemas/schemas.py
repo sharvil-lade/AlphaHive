@@ -293,3 +293,44 @@ class ReportHistoryItem(BaseModel):
     confidence_score: int
     created_at: str
 
+
+# Backtesting Schemas
+class BacktestRequest(BaseModel):
+    symbol: str
+    strategy: str = Field("rsi", description="Strategy type: rsi, ema_crossover, macd_crossover")
+    initial_capital: float = Field(10000.0, description="Initial portfolio cash amount")
+    range_str: str = Field("1y", description="Historical duration range (e.g. 1mo, 3mo, 6mo, 1y)")
+
+
+class EquityPoint(BaseModel):
+    date: str
+    portfolio_value: float
+    benchmark_value: float
+
+
+class BacktestTrade(BaseModel):
+    type: str
+    date: str
+    price: float
+    shares: float
+    value: float
+    cash_remaining: float
+    profit_loss: float
+    profit_loss_pct: float
+
+
+class BacktestResponse(BaseModel):
+    symbol: str
+    strategy: str
+    initial_capital: float
+    final_value: float
+    total_return: float
+    benchmark_return: float
+    sharpe_ratio: float
+    max_drawdown: float
+    win_rate: float
+    total_trades: int
+    equity_curve: List[EquityPoint]
+    trades: List[BacktestTrade]
+
+

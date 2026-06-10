@@ -22,7 +22,8 @@ import {
   fetchAlerts,
   createAlert,
   deleteAlert,
-  runAlertCheck
+  runAlertCheck,
+  runBacktest
 } from "../services/api";
 import { useAgentStream } from "../hooks/useAgentStream";
 import {
@@ -259,6 +260,44 @@ export default function Dashboard() {
   const [newAlertTriggerType, setNewAlertTriggerType] = useState("price_above");
   const [newAlertTriggerValue, setNewAlertTriggerValue] = useState("");
   const [alertsActiveOnly, setAlertsActiveOnly] = useState(true);
+
+  // Backtesting States
+  const [backtestSymbol, setBacktestSymbol] = useState("NVDA");
+  const [backtestStrategy, setBacktestStrategy] = useState("rsi");
+  const [backtestRange, setBacktestRange] = useState("1y");
+  const [backtestCapital, setBacktestCapital] = useState("10000");
+  const [backtestResult, setBacktestResult] = useState<any | null>(null);
+  const [isBacktestingLoading, setIsBacktestingLoading] = useState(false);
+  const [backtestError, setBacktestError] = useState<string | null>(null);
+
+  const handleRunBacktest = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!backtestSymbol) return;
+    setIsBacktestingLoading(true);
+    setBacktestError(null);
+    try {
+      const res = await runBacktest(
+        backtestSymbol.toUpperCase().trim(),
+        backtestStrategy,
+        parseFloat(backtestCapital) || 10000.0,
+        backtestRange
+      );
+      setBacktestResult(res);
+    } catch (err: any) {
+      console.error("Failed to run backtest:", err);
+      setBacktestError(err.message || "Failed to execute backtest. Please try again.");
+    } finally {
+      setIsBacktestingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentTab === "backtest") {
+      if (ticker && backtestSymbol !== ticker) {
+        setBacktestSymbol(ticker);
+      }
+    }
+  }, [currentTab, ticker]);
 
   const loadWatchlistAndAlerts = async () => {
     if (!sessionId) return;
@@ -604,7 +643,8 @@ export default function Dashboard() {
               { id: "research", label: "Analyst Workspace", icon: BarChart3 },
               { id: "agents", label: "Multi-Agent Arena", icon: Cpu },
               { id: "portfolio", label: "AI Portfolio", icon: Layers },
-              { id: "alerts", label: "Watchlist & Alerts", icon: ListTodo }
+              { id: "alerts", label: "Watchlist & Alerts", icon: ListTodo },
+              { id: "backtest", label: "Historical Backtest", icon: TrendingUp }
             ].map(item => {
               const Icon = item.icon;
               return (
@@ -1670,6 +1710,279 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+            </div>
+          ) : currentTab === "backtest" ? (
+            <div className="space-y-6 animate-fade-in">
+              <div className="glass-panel p-6 rounded-2xl space-y-4">
+                <div className="border-b border-terminal-border pb-3">
+                  <h2 className="text-sm font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-cyanGlow" /> Historical Backtest Simulation
+                  </h2>
+                  <p className="text-xs text-mutedText mt-1">
+                    Simulate quantitative strategies historically to evaluate returns, Sharpe ratios, drawdowns, and transaction logs compared to S&P 500.
+                  </p>
+                </div>
+
+                <form onSubmit={handleRunBacktest} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                  <div>
+                    <label className="text-[10px] text-mutedText block mb-1">Asset Ticker</label>
+                    <input 
+                      type="text"
+                      value={backtestSymbol}
+                      onChange={e => setBacktestSymbol(e.target.value.toUpperCase())}
+                      placeholder="e.g. NVDA"
+                      className="w-full h-9 bg-terminal-dark border border-terminal-border rounded px-3 text-xs text-white uppercase focus:outline-none focus:border-cyanGlow font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-mutedText block mb-1">Trading Strategy</label>
+                    <select
+                      value={backtestStrategy}
+                      onChange={e => setBacktestStrategy(e.target.value)}
+                      className="w-full h-9 bg-terminal-dark border border-terminal-border rounded px-3 text-xs text-white focus:outline-none focus:border-cyanGlow"
+                      required
+                    >
+                      <option value="rsi">RSI Reversal (Oversold/Overbought)</option>
+                      <option value="ema_crossover">EMA 9/21 Trend Crossover</option>
+                      <option value="macd_crossover">MACD Signal Line Crossover</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-mutedText block mb-1">Time Range</label>
+                    <select
+                      value={backtestRange}
+                      onChange={e => setBacktestRange(e.target.value)}
+                      className="w-full h-9 bg-terminal-dark border border-terminal-border rounded px-3 text-xs text-white focus:outline-none focus:border-cyanGlow"
+                      required
+                    >
+                      <option value="1mo">1 Month</option>
+                      <option value="3mo">3 Months</option>
+                      <option value="6mo">6 Months</option>
+                      <option value="1y">1 Year</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-mutedText block mb-1">Initial Capital ($)</label>
+                    <input 
+                      type="number"
+                      value={backtestCapital}
+                      onChange={e => setBacktestCapital(e.target.value)}
+                      className="w-full h-9 bg-terminal-dark border border-terminal-border rounded px-3 text-xs text-white focus:outline-none focus:border-cyanGlow font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={isBacktestingLoading}
+                      className="w-full h-9 bg-cyanGlow text-background text-xs font-bold rounded hover:bg-cyanGlow/90 disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      {isBacktestingLoading ? "Simulating..." : "Run Backtest"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {isBacktestingLoading && (
+                <div className="glass-panel p-12 rounded-2xl flex flex-col items-center justify-center space-y-4">
+                  <div className="w-8 h-8 border-4 border-cyanGlow border-t-transparent rounded-full animate-spin"></div>
+                  <div className="text-xs text-cyanGlow font-bold uppercase tracking-wider animate-pulse">
+                    Running strategy backtest...
+                  </div>
+                  <div className="text-[10px] text-mutedText italic text-center">
+                    Retrieving historical quotes, computing technical vectors, and mapping portfolio systematic transactions.
+                  </div>
+                </div>
+              )}
+
+              {backtestError && (
+                <div className="glass-panel p-4 rounded-xl border border-bearish/30 bg-bearish/5">
+                  <h4 className="text-xs font-bold text-bearish flex items-center gap-1.5 uppercase">
+                    <AlertTriangle className="w-4 h-4" /> Backtest Failure
+                  </h4>
+                  <p className="text-[11px] text-gray-300 mt-1">{backtestError}</p>
+                </div>
+              )}
+
+              {backtestResult && !isBacktestingLoading && (
+                <div className="space-y-6">
+                  {/* Metrics Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div className="glass-panel p-4 rounded-2xl space-y-1">
+                      <span className="text-[9px] font-bold text-mutedText uppercase tracking-wider block">Total Return</span>
+                      <span className={`text-xl font-mono font-black block ${backtestResult.total_return >= 0 ? "text-bullish" : "text-bearish"}`}>
+                        {backtestResult.total_return >= 0 ? "+" : ""}{(backtestResult.total_return * 100).toFixed(2)}%
+                      </span>
+                      <span className="text-[9px] text-gray-400 font-mono block">
+                        Final: ${backtestResult.final_value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                      </span>
+                    </div>
+
+                    <div className="glass-panel p-4 rounded-2xl space-y-1">
+                      <span className="text-[9px] font-bold text-mutedText uppercase tracking-wider block">S&P 500 Return</span>
+                      <span className={`text-xl font-mono font-black block ${backtestResult.benchmark_return >= 0 ? "text-bullish" : "text-bearish"}`}>
+                        {backtestResult.benchmark_return >= 0 ? "+" : ""}{(backtestResult.benchmark_return * 100).toFixed(2)}%
+                      </span>
+                      <span className="text-[9px] text-gray-400 block font-sans">SPY Buy & Hold</span>
+                    </div>
+
+                    <div className="glass-panel p-4 rounded-2xl space-y-1">
+                      <span className="text-[9px] font-bold text-mutedText uppercase tracking-wider block">Sharpe Ratio</span>
+                      <span className="text-xl font-mono font-black text-cyanGlow block">
+                        {backtestResult.sharpe_ratio.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-gray-400 block font-sans">Risk-Adjusted Return</span>
+                    </div>
+
+                    <div className="glass-panel p-4 rounded-2xl space-y-1">
+                      <span className="text-[9px] font-bold text-mutedText uppercase tracking-wider block">Max Drawdown</span>
+                      <span className="text-xl font-mono font-black text-bearish block">
+                        {(backtestResult.max_drawdown * 100).toFixed(2)}%
+                      </span>
+                      <span className="text-[9px] text-gray-400 block font-sans">Peak-to-Trough Decline</span>
+                    </div>
+
+                    <div className="glass-panel p-4 rounded-2xl space-y-1">
+                      <span className="text-[9px] font-bold text-mutedText uppercase tracking-wider block">Win Rate</span>
+                      <span className="text-xl font-mono font-black text-white block">
+                        {(backtestResult.win_rate * 100).toFixed(0)}%
+                      </span>
+                      <span className="text-[9px] text-gray-400 font-mono block">
+                        {backtestResult.total_trades} trades completed
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Equity Curve Chart */}
+                  <div className="glass-panel p-6 rounded-2xl space-y-4">
+                    <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5">
+                      <Activity className="w-4 h-4 text-cyanGlow" /> Equity Curve Comparison
+                    </h3>
+                    <div className="h-[320px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={backtestResult.equity_curve}>
+                          <defs>
+                            <linearGradient id="colorPortfolio" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#00f2fe" stopOpacity={0.2}/>
+                              <stop offset="95%" stopColor="#00f2fe" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="colorBenchmark" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#9ca3af" stopOpacity={0.1}/>
+                              <stop offset="95%" stopColor="#9ca3af" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <XAxis 
+                            dataKey="date" 
+                            stroke="#4b5563" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            axisLine={false}
+                          />
+                          <YAxis 
+                            stroke="#4b5563" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            axisLine={false}
+                            domain={['auto', 'auto']}
+                            tickFormatter={val => `$${val.toLocaleString()}`}
+                          />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: "#0b0f17", borderColor: "#1f2937", borderRadius: "12px" }}
+                            labelStyle={{ color: "#9ca3af", fontSize: "11px", fontWeight: "bold", fontFamily: "monospace" }}
+                            itemStyle={{ fontSize: "12px", fontFamily: "monospace" }}
+                            formatter={(value: any, name: any) => [
+                              `$${Number(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 
+                              name === "portfolio_value" ? "Strategy Portfolio" : "S&P 500 Benchmark"
+                            ]}
+                          />
+                          <Area 
+                            name="portfolio_value"
+                            type="monotone" 
+                            dataKey="portfolio_value" 
+                            stroke="#00f2fe" 
+                            strokeWidth={2}
+                            fillOpacity={1} 
+                            fill="url(#colorPortfolio)" 
+                          />
+                          <Area 
+                            name="benchmark_value"
+                            type="monotone" 
+                            dataKey="benchmark_value" 
+                            stroke="#9ca3af" 
+                            strokeWidth={1.5}
+                            strokeDasharray="4 4"
+                            fillOpacity={1} 
+                            fill="url(#colorBenchmark)" 
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Transaction Log */}
+                  <div className="glass-panel p-6 rounded-2xl space-y-4">
+                    <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-cyanGlow" /> Simulation Transaction Ledger
+                    </h3>
+                    <div className="overflow-x-auto max-h-[400px] overflow-y-auto pr-1">
+                      <table className="w-full text-left text-xs border-collapse font-mono">
+                        <thead>
+                          <tr className="border-b border-terminal-border text-[10px] text-mutedText uppercase tracking-wider font-sans">
+                            <th className="py-2 px-4">Date</th>
+                            <th className="py-2 px-4">Type</th>
+                            <th className="py-2 px-4">Close Price</th>
+                            <th className="py-2 px-4">Shares</th>
+                            <th className="py-2 px-4">Transaction Value</th>
+                            <th className="py-2 px-4">Net Profit/Loss</th>
+                            <th className="py-2 px-4">Cash Remaining</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {backtestResult.trades.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="text-center py-8 text-mutedText italic text-xs font-sans">
+                                No trades executed. Strategy parameters were not crossed during this timeframe.
+                              </td>
+                            </tr>
+                          ) : (
+                            backtestResult.trades.map((trade: any, idx: number) => (
+                              <tr key={idx} className="border-b border-terminal-border hover:bg-terminal-hover/20">
+                                <td className="py-3 px-4 text-mutedText">{trade.date}</td>
+                                <td className="py-3 px-4">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded font-sans font-bold ${
+                                    trade.type.startsWith("BUY") 
+                                      ? "text-bullish bg-bullish/10 border border-bullish/25" 
+                                      : "text-bearish bg-bearish/10 border border-bearish/25"
+                                  }`}>
+                                    {trade.type}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 font-bold text-white">${trade.price.toFixed(2)}</td>
+                                <td className="py-3 px-4 text-gray-300">{trade.shares.toLocaleString()}</td>
+                                <td className="py-3 px-4 text-gray-300">${trade.value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                <td className={`py-3 px-4 font-bold ${
+                                  trade.type.startsWith("BUY") 
+                                    ? "text-mutedText" 
+                                    : trade.profit_loss >= 0 
+                                      ? "text-bullish" 
+                                      : "text-bearish"
+                                }`}>
+                                  {trade.type.startsWith("BUY") 
+                                    ? "-" 
+                                    : `${trade.profit_loss >= 0 ? "+" : ""}$${trade.profit_loss.toFixed(2)} (${trade.profit_loss_pct >= 0 ? "+" : ""}${trade.profit_loss_pct.toFixed(2)}%)`
+                                  }
+                                </td>
+                                <td className="py-3 px-4 text-gray-400">${trade.cash_remaining.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-mutedText italic text-center py-20">Work in Progress</div>
