@@ -11,7 +11,11 @@ import {
   runAgentWorkflow,
   fetchReportsHistory,
   fetchReportDetail,
-  getDownloadUrl
+  getDownloadUrl,
+  addPortfolioHolding,
+  updatePortfolioHolding,
+  deletePortfolioHolding,
+  fetchPortfolioSummary
 } from "../services/api";
 import { useAgentStream } from "../hooks/useAgentStream";
 import {
@@ -228,6 +232,77 @@ export default function Dashboard() {
   const [percentChange, setPercentChange] = useState(2.48);
 
   const [chartData, setChartData] = useState<any[]>([]);
+
+  // Portfolio States
+  const [portfolioSummary, setPortfolioSummary] = useState<any>(null);
+  const [isAddingHolding, setIsAddingHolding] = useState(false);
+  const [newHoldingSymbol, setNewHoldingSymbol] = useState("");
+  const [newHoldingShares, setNewHoldingShares] = useState("");
+  const [newHoldingPrice, setNewHoldingPrice] = useState("");
+  const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
+  const [editHoldingShares, setEditHoldingShares] = useState("");
+  const [editHoldingPrice, setEditHoldingPrice] = useState("");
+
+  const loadPortfolio = async () => {
+    if (!sessionId) return;
+    try {
+      const summary = await fetchPortfolioSummary(sessionId);
+      setPortfolioSummary(summary);
+    } catch (e) {
+      console.error("Failed to load portfolio summary:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (currentTab === "portfolio") {
+      loadPortfolio();
+    }
+  }, [currentTab, sessionId]);
+
+  const handleAddHolding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newHoldingSymbol || !newHoldingShares || !newHoldingPrice || !sessionId) return;
+    try {
+      await addPortfolioHolding(
+        sessionId,
+        newHoldingSymbol.toUpperCase().trim(),
+        parseFloat(newHoldingShares),
+        parseFloat(newHoldingPrice)
+      );
+      setNewHoldingSymbol("");
+      setNewHoldingShares("");
+      setNewHoldingPrice("");
+      setIsAddingHolding(false);
+      loadPortfolio();
+    } catch (err) {
+      console.error("Failed to add position:", err);
+    }
+  };
+
+  const handleUpdateHolding = async (holdingId: string) => {
+    if (!editHoldingShares || !editHoldingPrice) return;
+    try {
+      await updatePortfolioHolding(
+        holdingId,
+        parseFloat(editHoldingShares),
+        parseFloat(editHoldingPrice)
+      );
+      setEditingHoldingId(null);
+      loadPortfolio();
+    } catch (err) {
+      console.error("Failed to update position:", err);
+    }
+  };
+
+  const handleDeleteHolding = async (holdingId: string) => {
+    if (!confirm("Are you sure you want to delete this position?")) return;
+    try {
+      await deletePortfolioHolding(holdingId);
+      loadPortfolio();
+    } catch (err) {
+      console.error("Failed to delete position:", err);
+    }
+  };
 
   // Initialize session ID
   useEffect(() => {
@@ -540,7 +615,9 @@ export default function Dashboard() {
 
         {/* Page Inner Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Indices Bar */}
+          {currentTab === "research" || currentTab === "agents" ? (
+            <>
+              {/* Indices Bar */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             {[
               { index: "SPY (S&P 500)", val: "5,304.72", change: "+0.45%", isUp: true },
@@ -983,6 +1060,306 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+          )}
+            </>
+          ) : currentTab === "portfolio" ? (
+            <div className="space-y-6">
+              {/* Portfolio Summary Header Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="glass-panel p-4 rounded-xl">
+                  <div className="text-[10px] text-mutedText font-semibold tracking-wider uppercase">Portfolio Value</div>
+                  <div className="text-lg font-bold mt-1 text-white">
+                    ${portfolioSummary?.total_value?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) || "0.00"}
+                  </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl">
+                  <div className="text-[10px] text-mutedText font-semibold tracking-wider uppercase">Total Cost Basis</div>
+                  <div className="text-lg font-bold mt-1 text-gray-300">
+                    ${portfolioSummary?.total_cost?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) || "0.00"}
+                  </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl">
+                  <div className="text-[10px] text-mutedText font-semibold tracking-wider uppercase">Unrealized Gain / Loss</div>
+                  <div className={`text-lg font-bold mt-1 ${
+                    (portfolioSummary?.gain_loss ?? 0) >= 0 ? "text-bullish" : "text-bearish"
+                  }`}>
+                    {portfolioSummary?.gain_loss >= 0 ? "+" : ""}
+                    ${portfolioSummary?.gain_loss?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) || "0.00"}
+                    <span className="text-xs ml-1 font-semibold">
+                      ({portfolioSummary?.gain_loss_percentage >= 0 ? "+" : ""}
+                      {portfolioSummary?.gain_loss_percentage?.toFixed(2) || "0.00"}%)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl">
+                  <div className="text-[10px] text-mutedText font-semibold tracking-wider uppercase">Weighted Beta</div>
+                  <div className="text-lg font-bold mt-1 text-cyanGlow">
+                    {portfolioSummary?.weighted_beta?.toFixed(2) || "1.00"}
+                  </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl">
+                  <div className="text-[10px] text-mutedText font-semibold tracking-wider uppercase">Annualized Volatility</div>
+                  <div className="text-lg font-bold mt-1 text-cyanGlow">
+                    {portfolioSummary?.weighted_volatility !== undefined 
+                      ? `${(portfolioSummary.weighted_volatility * 100).toFixed(1)}%`
+                      : "0.0%"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Add position section */}
+              {isAddingHolding && (
+                <form onSubmit={handleAddHolding} className="glass-panel p-4 rounded-xl border border-cyanGlow/25 space-y-4 max-w-2xl animate-slide-up">
+                  <h4 className="text-xs font-bold text-white uppercase flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-cyanGlow" /> Add Position
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] text-mutedText block mb-1">Symbol</label>
+                      <input 
+                        type="text" 
+                        value={newHoldingSymbol} 
+                        onChange={e => setNewHoldingSymbol(e.target.value.toUpperCase())}
+                        placeholder="e.g. AAPL" 
+                        className="w-full h-8 bg-terminal-dark border border-terminal-border rounded px-2 text-xs text-white uppercase focus:outline-none focus:border-cyanGlow"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-mutedText block mb-1">Shares</label>
+                      <input 
+                        type="number" 
+                        step="any"
+                        value={newHoldingShares} 
+                        onChange={e => setNewHoldingShares(e.target.value)}
+                        placeholder="e.g. 10" 
+                        className="w-full h-8 bg-terminal-dark border border-terminal-border rounded px-2 text-xs text-white focus:outline-none focus:border-cyanGlow"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-mutedText block mb-1">Avg Cost ($)</label>
+                      <input 
+                        type="number" 
+                        step="any"
+                        value={newHoldingPrice} 
+                        onChange={e => setNewHoldingPrice(e.target.value)}
+                        placeholder="e.g. 175.50" 
+                        className="w-full h-8 bg-terminal-dark border border-terminal-border rounded px-2 text-xs text-white focus:outline-none focus:border-cyanGlow"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button 
+                      type="button" 
+                      onClick={() => setIsAddingHolding(false)}
+                      className="px-3 py-1.5 bg-terminal-hover text-[11px] font-bold rounded text-gray-300 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="px-3 py-1.5 bg-cyanGlow text-[11px] font-bold rounded text-background hover:bg-cyanGlow/90"
+                    >
+                      Add Position
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Main portfolio grid split */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* holdings list ledger */}
+                <div className="glass-panel p-6 rounded-2xl lg:col-span-2 space-y-4 overflow-x-auto">
+                  <div className="flex justify-between items-center border-b border-terminal-border pb-3">
+                    <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4 text-cyanGlow" /> Holdings Ledger
+                    </h3>
+                    {!isAddingHolding && (
+                      <button
+                        onClick={() => setIsAddingHolding(true)}
+                        className="px-2.5 py-1 rounded bg-cyanGlow text-background text-[10px] font-bold hover:bg-cyanGlow/90 transition-all"
+                      >
+                        + Add Position
+                      </button>
+                    )}
+                  </div>
+
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-terminal-border text-[10px] text-mutedText uppercase tracking-wider">
+                        <th className="py-2 px-4">Symbol</th>
+                        <th className="py-2 px-4">Sector</th>
+                        <th className="py-2 px-4">Shares</th>
+                        <th className="py-2 px-4">Avg Cost</th>
+                        <th className="py-2 px-4">Spot Price</th>
+                        <th className="py-2 px-4">Value</th>
+                        <th className="py-2 px-4">Gain/Loss</th>
+                        <th className="py-2 px-4">Risk Factors</th>
+                        <th className="py-2 px-4">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!portfolioSummary?.holdings || portfolioSummary.holdings.length === 0) ? (
+                        <tr>
+                          <td colSpan={9} className="text-center py-8 text-mutedText italic text-xs">
+                            No holdings in portfolio. Click Add Position to start indexing your assets.
+                          </td>
+                        </tr>
+                      ) : (
+                        portfolioSummary.holdings.map((h: any) => {
+                          const isEditing = editingHoldingId === h.id;
+                          return (
+                            <tr key={h.id} className="border-b border-terminal-border hover:bg-terminal-hover/20">
+                              <td className="py-3 px-4 font-bold text-white font-mono">{h.symbol}</td>
+                              <td className="py-3 px-4 text-gray-400 text-[10px]">{h.sector}</td>
+                              <td className="py-3 px-4 font-mono">
+                                {isEditing ? (
+                                  <input 
+                                    type="number" 
+                                    step="any"
+                                    value={editHoldingShares} 
+                                    onChange={e => setEditHoldingShares(e.target.value)}
+                                    className="w-16 bg-terminal-dark border border-terminal-border rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-cyanGlow"
+                                  />
+                                ) : h.shares}
+                              </td>
+                              <td className="py-3 px-4 font-mono">
+                                {isEditing ? (
+                                  <input 
+                                    type="number" 
+                                    step="any"
+                                    value={editHoldingPrice} 
+                                    onChange={e => setEditHoldingPrice(e.target.value)}
+                                    className="w-20 bg-terminal-dark border border-terminal-border rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-cyanGlow"
+                                  />
+                                ) : `$${h.average_buy_price.toFixed(2)}`}
+                              </td>
+                              <td className="py-3 px-4 font-mono">${h.current_price.toFixed(2)}</td>
+                              <td className="py-3 px-4 font-mono font-bold text-gray-200">${h.total_value.toFixed(2)}</td>
+                              <td className={`py-3 px-4 font-mono font-bold ${h.gain_loss >= 0 ? "text-bullish" : "text-bearish"}`}>
+                                {h.gain_loss >= 0 ? "+" : ""}{h.gain_loss.toFixed(2)} ({h.gain_loss_percentage.toFixed(1)}%)
+                              </td>
+                              <td className="py-3 px-4 text-[10px] text-gray-400 font-mono">
+                                Beta: {h.beta.toFixed(2)} | Vol: {(h.volatility*100).toFixed(1)}%
+                              </td>
+                              <td className="py-3 px-4">
+                                {isEditing ? (
+                                  <div className="flex gap-2">
+                                    <button 
+                                      onClick={() => handleUpdateHolding(h.id)}
+                                      className="px-2 py-0.5 bg-bullish text-background text-[10px] font-bold rounded hover:bg-bullish/90"
+                                    >
+                                      Save
+                                    </button>
+                                    <button 
+                                      onClick={() => setEditingHoldingId(null)}
+                                      className="px-2 py-0.5 bg-terminal-hover text-gray-300 text-[10px] font-bold rounded hover:text-white"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-2">
+                                    <button 
+                                      onClick={() => {
+                                        setEditingHoldingId(h.id);
+                                        setEditHoldingShares(h.shares.toString());
+                                        setEditHoldingPrice(h.average_buy_price.toString());
+                                      }}
+                                      className="text-cyanGlow hover:underline text-[11px] font-bold"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDeleteHolding(h.id)}
+                                      className="text-bearish hover:underline text-[11px] font-bold"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Right col: Sector Allocations & risk assessment */}
+                <div className="space-y-6">
+                  {/* Sector allocations list/bar visualizer */}
+                  <div className="glass-panel p-5 rounded-2xl space-y-4">
+                    <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5 border-b border-terminal-border pb-2">
+                      <Layers className="w-4.5 h-4.5 text-cyanGlow" /> Sector Allocations
+                    </h3>
+                    <div className="space-y-4">
+                      {portfolioSummary?.sector_weights && Object.keys(portfolioSummary.sector_weights).length > 0 ? (
+                        Object.entries(portfolioSummary.sector_weights).map(([sector, weight]: any) => (
+                          <div key={sector} className="space-y-1.5">
+                            <div className="flex justify-between text-[11px] font-mono text-gray-300">
+                              <span>{sector}</span>
+                              <span className="text-cyanGlow font-bold">{weight.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-terminal-dark h-1.5 rounded-full overflow-hidden border border-terminal-border">
+                              <div 
+                                className="bg-gradient-to-r from-cyanGlow to-bullish h-full rounded-full"
+                                style={{ width: `${weight}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-mutedText italic text-center py-6 text-xs">No assets in portfolio</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Risk gauge card */}
+                  <div className="glass-panel p-5 rounded-2xl space-y-4">
+                    <h3 className="text-xs font-black text-mutedText uppercase tracking-wider flex items-center gap-1.5 border-b border-terminal-border pb-2">
+                      <Activity className="w-4.5 h-4.5 text-cyanGlow" /> AI Risk Assessment
+                    </h3>
+                    <div className="space-y-3 text-xs leading-relaxed text-gray-300">
+                      <div className="flex justify-between items-center font-mono">
+                        <span className="text-mutedText">Weighted Beta</span>
+                        <span className={`font-bold ${portfolioSummary?.weighted_beta > 1.2 ? "text-bearish" : "text-bullish"}`}>
+                          {portfolioSummary?.weighted_beta?.toFixed(2) || "0.00"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center font-mono">
+                        <span className="text-mutedText">Annual Volatility</span>
+                        <span className="text-cyanGlow font-bold">
+                          {portfolioSummary?.weighted_volatility !== undefined 
+                            ? `${(portfolioSummary.weighted_volatility * 100).toFixed(1)}%`
+                            : "0.0%"}
+                        </span>
+                      </div>
+                      
+                      <div className="p-3 bg-terminal-dark rounded-lg border border-terminal-border text-[11px]">
+                        <span className="font-bold text-white block mb-1">Risk Summary:</span>
+                        {portfolioSummary?.weighted_beta > 1.3 ? (
+                          <span>The portfolio exhibits high systematic risk (aggressive stance). Highly sensitive to general index movements.</span>
+                        ) : portfolioSummary?.weighted_beta > 0.8 ? (
+                          <span>The portfolio exhibits moderate systematic risk (balanced stance). Aligns closely with market return indices.</span>
+                        ) : (
+                          <span>The portfolio is conservative with low systematic risk. Volatility is defensive against market corrections.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-mutedText italic text-center py-20">Work in Progress</div>
           )}
         </div>
       </div>

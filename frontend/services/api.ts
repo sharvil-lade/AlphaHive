@@ -53,3 +53,52 @@ export async function fetchReportDetail(runId: string): Promise<any> {
 export function getDownloadUrl(runId: string, format: 'markdown' | 'pdf'): string {
   return `${API_BASE_URL}/api/v1/reports/${runId}/${format}`;
 }
+
+export async function fetchPortfolio(sessionId: string): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios?session_id=${sessionId}`);
+  if (!res.ok) throw new Error(`Failed to fetch portfolio: ${res.statusText}`);
+  return res.json();
+}
+
+export async function addPortfolioHolding(
+  sessionId: string,
+  symbol: string,
+  shares: number,
+  averageBuyPrice: number
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/holdings?session_id=${sessionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol, shares, average_buy_price: averageBuyPrice }),
+  });
+  if (!res.ok) throw new Error(`Failed to add portfolio holding: ${res.statusText}`);
+  return res.json();
+}
+
+export async function updatePortfolioHolding(
+  holdingId: string,
+  shares: number,
+  averageBuyPrice: number
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/holdings/${holdingId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ shares, average_buy_price: averageBuyPrice }),
+  });
+  if (!res.ok) throw new Error(`Failed to update portfolio holding: ${res.statusText}`);
+  return res.json();
+}
+
+export async function deletePortfolioHolding(holdingId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/holdings/${holdingId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Failed to delete portfolio holding: ${res.statusText}`);
+}
+
+export async function fetchPortfolioSummary(sessionId: string): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/summary?session_id=${sessionId}`);
+  if (!res.ok) throw new Error(`Failed to fetch portfolio summary: ${res.statusText}`);
+  return res.json();
+}
+

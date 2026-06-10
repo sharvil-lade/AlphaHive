@@ -130,6 +130,36 @@ export interface PortfolioSchema {
   holdings: PortfolioHoldingSchema[];
 }
 
+export interface PortfolioSummaryHolding {
+  id: string;
+  portfolio_id: string;
+  symbol: string;
+  shares: number;
+  average_buy_price: number;
+  current_price: number;
+  total_value: number;
+  total_cost: number;
+  gain_loss: number;
+  gain_loss_percentage: number;
+  sector: string;
+  beta: number;
+  volatility: number;
+  last_updated?: string | null;
+}
+
+export interface PortfolioSummaryResponse {
+  portfolio_id: string;
+  name: string;
+  total_value: number;
+  total_cost: number;
+  gain_loss: number;
+  gain_loss_percentage: number;
+  weighted_beta: number;
+  weighted_volatility: number;
+  holdings: PortfolioSummaryHolding[];
+  sector_weights: Record<string, number>;
+}
+
 export interface QueryResponse {
   symbol: string;
   query: string;

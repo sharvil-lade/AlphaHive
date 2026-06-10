@@ -87,6 +87,37 @@ class PortfolioSchema(PortfolioBase):
         from_attributes = True
 
 
+class PortfolioSummaryHolding(BaseModel):
+    id: str
+    portfolio_id: str
+    symbol: str
+    shares: float
+    average_buy_price: float
+    current_price: float
+    total_value: float
+    total_cost: float
+    gain_loss: float
+    gain_loss_percentage: float
+    sector: str
+    beta: float
+    volatility: float
+    last_updated: Optional[str] = None
+
+
+class PortfolioSummaryResponse(BaseModel):
+    portfolio_id: str
+    name: str
+    total_value: float
+    total_cost: float
+    gain_loss: float
+    gain_loss_percentage: float
+    weighted_beta: float
+    weighted_volatility: float
+    holdings: List[PortfolioSummaryHolding]
+    sector_weights: Dict[str, float]
+
+
+
 # Watchlist Schemas
 class WatchlistCreate(BaseModel):
     symbol: str
