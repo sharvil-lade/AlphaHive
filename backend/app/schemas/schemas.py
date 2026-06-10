@@ -253,3 +253,12 @@ class QueryResponse(BaseModel):
     query: str
     matches: List[SearchChunkDetail]
 
+
+class ReportHistoryItem(BaseModel):
+    run_id: UUID
+    ticker: str
+    status: str
+    recommendation: str
+    confidence_score: int
+    created_at: str
+

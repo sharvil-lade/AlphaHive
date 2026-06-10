@@ -148,6 +148,15 @@ export interface QuoteResponse {
   source: string;
 }
 
+export interface ReportHistoryItem {
+  run_id: string;
+  ticker: string;
+  status: string;
+  recommendation: string;
+  confidence_score: number;
+  created_at: string;
+}
+
 export interface ResearchQueryRequest {
   /** Natural language stock research query (e.g. Should I buy NVDA?) */
   query: string;
