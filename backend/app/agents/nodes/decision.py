@@ -90,6 +90,16 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
                     confidence_score = int(content.get("confidence_score", 50))
                     content_markdown = str(content.get("memo_markdown", ""))
                     source = "openai"
+                    
+                    # Track token budget usage
+                    usage = result.get("usage", {})
+                    total_tokens = usage.get("total_tokens", 0)
+                    if total_tokens > 0:
+                        try:
+                            from backend.app.services.token_budget_service import token_budget_service
+                            await token_budget_service.track_usage(session_id, total_tokens)
+                        except Exception as tracking_err:
+                            logger.error(f"Failed to record token usage: {tracking_err}")
                 else:
                     logger.error(f"OpenAI decision fetch failed: {resp.text}")
         except Exception as e:

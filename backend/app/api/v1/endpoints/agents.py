@@ -70,6 +70,15 @@ async def run_agent_analysis(
     """Initialize an AgentRun session and launch the LangGraph workflow in the background."""
     symbol = symbol.upper()
     
+    # Check session token budget
+    from backend.app.services.token_budget_service import token_budget_service
+    is_budget_ok = await token_budget_service.check_budget(session_id)
+    if not is_budget_ok:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Token budget exceeded for this session. Please reset or wait."
+        )
+
     # 1. Create database row
     run_id = uuid4()
     agent_run = AgentRun(

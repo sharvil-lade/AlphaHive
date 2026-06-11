@@ -15,7 +15,7 @@ async def news_node(state: AgentState) -> Dict[str, Any]:
     )
     
     try:
-        sentiment = await sentiment_service.analyze_sentiment(ticker)
+        sentiment = await sentiment_service.analyze_sentiment(ticker, session_id=state.get("session_id"))
         
         success_log = await log_agent_activity(
             run_id, 

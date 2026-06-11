@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "AI Hedge Fund Analyst Platform"
+    ENVIRONMENT: str = Field("development", description="Deployment environment: development | production")
 
     # PostgreSQL
     POSTGRES_USER: str = "postgres"
@@ -30,12 +31,31 @@ class Settings(BaseSettings):
     FINNHUB_API_KEY: Optional[str] = None
     ALPHA_VANTAGE_API_KEY: Optional[str] = None
 
+    # Token Budget (LLM cost control)
+    MAX_TOKENS_PER_SESSION: int = Field(
+        100000,
+        description="Maximum LLM tokens allowed per session before the budget gate blocks new runs."
+    )
+
+    # CORS — comma-separated allowed origins for production hardening
+    # e.g. CORS_ORIGINS=https://app.example.com,https://dashboard.example.com
+    CORS_ORIGINS: str = Field(
+        "*",
+        description="Comma-separated allowed CORS origins. Use '*' for open development access."
+    )
+
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
     )
+
+    def get_cors_origins(self) -> List[str]:
+        """Parse and return CORS origins as a list."""
+        if self.CORS_ORIGINS == "*":
+            return ["*"]
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

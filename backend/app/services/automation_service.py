@@ -145,7 +145,7 @@ class AutomationService:
                     # 3. Sentiment Triggers
                     elif alert.trigger_type == "sentiment_drop":
                         if sentiment is None:
-                            sentiment = await sentiment_service.analyze_sentiment(symbol)
+                            sentiment = await sentiment_service.analyze_sentiment(symbol, session_id=alert.session_id)
                             
                         if sentiment and "score" in sentiment:
                             current_val = sentiment["score"]

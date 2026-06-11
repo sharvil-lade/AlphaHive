@@ -1,6 +1,8 @@
 version: '3.8'
 
 services:
+  # ── Data Infrastructure ──────────────────────────────────────────────────────
+
   postgres:
     image: postgres:15-alpine
     container_name: hedge_fund_postgres
@@ -48,10 +50,106 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Application Services ─────────────────────────────────────────────────────
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hedge_fund_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/hedge_fund_db
+      - REDIS_URL=redis://redis:6379/0
+      # Override these via .env or CI secrets:
+      # - OPENAI_API_KEY=sk-...
+      # - FINNHUB_API_KEY=...
+      # - CORS_ORIGINS=https://app.example.com
+      # - MAX_TOKENS_PER_SESSION=100000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hedge_fund_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Observability Stack (start with: docker compose --profile monitoring up) ─
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hedge_fund_prometheus
+    restart: always
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hedge_fund_grafana
+    restart: always
+    profiles: ["monitoring"]
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
   qdrant_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local

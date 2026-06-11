@@ -17,7 +17,7 @@ class SentimentService:
         if self.openai_key == "your_openai_key_here" or not self.openai_key:
             self.openai_key = None
 
-    async def analyze_sentiment(self, symbol: str) -> Dict[str, Any]:
+    async def analyze_sentiment(self, symbol: str, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Aggregate news articles and social mentions, then evaluate the unified sentiment score and summary."""
         symbol = symbol.upper()
 
@@ -34,14 +34,14 @@ class SentimentService:
 
         # 3. Call OpenAI if API key is present
         if self.openai_key:
-            openai_sentiment = await self._fetch_openai_sentiment(symbol, headlines, social_texts)
+            openai_sentiment = await self._fetch_openai_sentiment(symbol, headlines, social_texts, session_id)
             if openai_sentiment:
                 return openai_sentiment
 
         # 4. Fallback to Local Rule-based Lexical Analyzer
         return self._evaluate_local_sentiment(symbol, headlines, social_texts, combined_text)
 
-    async def _fetch_openai_sentiment(self, symbol: str, headlines: List[str], social_texts: List[str]) -> Optional[Dict[str, Any]]:
+    async def _fetch_openai_sentiment(self, symbol: str, headlines: List[str], social_texts: List[str], session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Query OpenAI API for structured financial sentiment evaluation."""
         try:
             url = "https://api.openai.com/v1/chat/completions"
@@ -83,6 +83,17 @@ class SentimentService:
                     content_str = data["choices"][0]["message"]["content"]
                     result = json.loads(content_str)
                     
+                    # Track token budget usage if session_id is available
+                    if session_id:
+                        usage = data.get("usage", {})
+                        total_tokens = usage.get("total_tokens", 0)
+                        if total_tokens > 0:
+                            try:
+                                from backend.app.services.token_budget_service import token_budget_service
+                                await token_budget_service.track_usage(session_id, total_tokens)
+                            except Exception as tracking_err:
+                                logger.error(f"Failed to record sentiment token usage: {tracking_err}")
+
                     return {
                         "symbol": symbol,
                         "score": int(result.get("score", 0)),
