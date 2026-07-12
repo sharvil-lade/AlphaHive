@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
-from backend.app.main import app
+from app.main import app
 
 # Use pytest-asyncio to handle async tests
 pytestmark = pytest.mark.asyncio

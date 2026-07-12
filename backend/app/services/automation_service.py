@@ -5,10 +5,10 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.models import Watchlist, Alert
-from backend.app.services.stock_service import stock_service
-from backend.app.services.indicators_service import indicators_service
-from backend.app.services.sentiment_service import sentiment_service
+from app.models.models import Watchlist, Alert
+from app.services.stock_service import stock_service
+from app.services.indicators_service import indicators_service
+from app.services.sentiment_service import sentiment_service
 
 logger = logging.getLogger("automation-service")
 

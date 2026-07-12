@@ -5,10 +5,11 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Union, get_args, get_origin
 from uuid import UUID
 
-# Adjust path to import backend modules correctly
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+# Adjust path so `app.*` (backend/app/) is importable regardless of cwd.
+# generate_ts_types.py -> scripts -> backend (2 levels up), matching the app package's home.
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from backend.app.schemas import schemas
+from app.schemas import schemas
 
 
 def map_python_type_to_ts(py_type: Any) -> str:

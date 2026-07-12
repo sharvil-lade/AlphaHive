@@ -2,7 +2,8 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
-from backend.app.main import app
+from app.main import app
+from app.services.sentiment_service import sentiment_service
 
 # Use pytest-asyncio to handle async tests
 pytestmark = pytest.mark.asyncio
@@ -38,14 +39,23 @@ async def test_sentiment_summary_endpoint(client):
     assert isinstance(data["threats"], list)
 
 
-async def test_sentiment_summary_nvda_specifics(client):
-    """Test NVDA specific sentiment response mapping details (mock fallbacks or OpenAI)."""
-    resp = await client.get("/api/v1/sentiment/summary?symbol=NVDA")
-    assert resp.status_code == 200
-    data = resp.json()
+async def test_local_sentiment_fallback_is_not_symbol_biased():
+    """The deterministic local fallback must never special-case a symbol.
 
-    assert data["symbol"] == "NVDA"
-    assert data["rating"] == "BUY"
-    assert data["score"] >= 50
-    assert len(data["opportunities"]) >= 2
-    assert len(data["threats"]) >= 1
+    Regression test for a removed anti-pattern where NVDA was hardcoded to a forced
+    bullish floor (score >= 50, rating BUY) and TSLA to a forced bearish ceiling
+    (score <= -30, rating SELL) regardless of the actual input text. Tested directly
+    against `_evaluate_local_sentiment` (bypassing the LLM) so it's deterministic
+    and independent of whether an LLM provider is configured.
+    """
+    identical_text = "quarterly results were roughly in line with expectations"
+
+    nvda_result = sentiment_service._evaluate_local_sentiment("NVDA", [], [], identical_text)
+    tsla_result = sentiment_service._evaluate_local_sentiment("TSLA", [], [], identical_text)
+    generic_result = sentiment_service._evaluate_local_sentiment("XYZ", [], [], identical_text)
+
+    # Same input text must yield the same score/rating regardless of symbol —
+    # any divergence would mean symbol-specific logic has crept back in.
+    assert nvda_result["score"] == tsla_result["score"] == generic_result["score"]
+    assert nvda_result["rating"] == tsla_result["rating"] == generic_result["rating"]
+    assert nvda_result["source"] == "local_lexical_fallback"

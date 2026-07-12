@@ -7,12 +7,13 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-# Adjust path to import backend modules correctly
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+# Adjust path so `app.*` (backend/app/) is importable regardless of cwd.
+# env.py -> alembic -> backend (2 levels up), matching the app package's home.
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # Import our configuration settings and declarative base
-from backend.app.core.config import settings
-from backend.app.models.models import Base
+from app.core.config import settings
+from app.models.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

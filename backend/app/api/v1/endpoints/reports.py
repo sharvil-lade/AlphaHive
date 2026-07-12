@@ -4,9 +4,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.session import get_db
-from backend.app.schemas.schemas import ReportHistoryItem
-from backend.app.services.memo_service import memo_service
+from app.db.session import get_db
+from app.schemas.schemas import ReportHistoryItem
+from app.services.memo_service import memo_service
 
 router = APIRouter()
 logger = logging.getLogger("reports-api")

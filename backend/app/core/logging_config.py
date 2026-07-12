@@ -2,7 +2,7 @@
 Structured JSON logging configuration for production-grade observability.
 
 Usage (in main.py):
-    from backend.app.core.logging_config import configure_logging
+    from app.core.logging_config import configure_logging
     configure_logging()
 
 All loggers throughout the application will automatically emit JSON-formatted

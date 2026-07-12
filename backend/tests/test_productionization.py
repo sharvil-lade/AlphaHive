@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock
 from fastapi import HTTPException
 from httpx import AsyncClient
 
-from backend.app.main import app
-from backend.app.core.rate_limiter import RateLimiter
-from backend.app.core.logging_config import configure_logging, JSONFormatter
-from backend.app.core.config import settings
-from backend.app.services.token_budget_service import TokenBudgetService
+from app.main import app
+from app.core.rate_limiter import RateLimiter
+from app.core.logging_config import configure_logging, JSONFormatter
+from app.core.config import settings
+from app.services.token_budget_service import TokenBudgetService
 
 
 @pytest_asyncio.fixture

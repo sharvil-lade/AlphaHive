@@ -20,3 +20,11 @@ class AgentState(TypedDict):
     risk_metrics: Dict[str, Any]
     decision: Dict[str, Any]
     logs: Annotated[List[Dict[str, Any]], append_logs]
+
+    # Chat-graph-only fields (see agents/nodes/router.py, agents/nodes/synthesis.py).
+    # Unused by the original ticker-only graph (agents/graph.py:create_agent_graph).
+    query: str
+    message_id: str
+    market: str  # "IN" | "US"
+    intent: str  # "analysis" | "comparison" | "general_question"
+    needs_agents: bool

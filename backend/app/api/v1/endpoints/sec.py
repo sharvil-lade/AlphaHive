@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from backend.app.schemas.schemas import IndexResponse, QueryResponse
-from backend.app.services.sec_service import sec_service
-from backend.app.utils.text_chunker import text_chunker
-from backend.app.services.vector_store import vector_store
+from app.schemas.schemas import IndexResponse, QueryResponse
+from app.services.sec_service import sec_service
+from app.utils.text_chunker import text_chunker
+from app.services.vector_store import vector_store
 
 router = APIRouter()
 

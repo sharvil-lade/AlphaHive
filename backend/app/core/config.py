@@ -6,13 +6,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "AI Hedge Fund Analyst Platform"
+    PROJECT_NAME: str = "AlphaHive"
+    VERSION: str = "1.0"
     ENVIRONMENT: str = Field("development", description="Deployment environment: development | production")
 
     # PostgreSQL
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgrespassword"
-    POSTGRES_DB: str = "hedge_fund_db"
+    POSTGRES_DB: str = "alphahive_db"
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     DATABASE_URL: Optional[str] = None
@@ -26,10 +27,21 @@ class Settings(BaseSettings):
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
 
-    # API Keys
-    OPENAI_API_KEY: Optional[str] = None
+    # LLM — LiteLLM proxy (OpenAI-compatible). One primary model + one fallback,
+    # used by every agent (router, specialists, synthesis) — no per-role tiers.
+    LITELLM_BASE_URL: Optional[str] = None
+    LITELLM_API_KEY: Optional[str] = None
+    LLM_MODEL_PRIMARY: str = "google/gemini-3.5-flash"
+    LLM_MODEL_FALLBACK: str = "anthropic/claude-haiku-4-5"
+    # Stronger model reserved for the final synthesis/decision step, which reads every
+    # specialist agent's output and writes the actual investment recommendation.
+    LLM_MODEL_SYNTHESIS: str = "anthropic/claude-sonnet-4-6"
+
+    # Market data API Keys
     FINNHUB_API_KEY: Optional[str] = None
     ALPHA_VANTAGE_API_KEY: Optional[str] = None
+    TWELVE_DATA_API_KEY: Optional[str] = None
+    MARKETAUX_API_KEY: Optional[str] = None
 
     # Token Budget (LLM cost control)
     MAX_TOKENS_PER_SESSION: int = Field(
@@ -45,7 +57,8 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"),
+        # config.py -> core -> app -> backend -> repo root (4 levels up)
+        env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
@@ -68,7 +81,7 @@ class Settings(BaseSettings):
         password = data.get("POSTGRES_PASSWORD", "postgrespassword")
         host = data.get("POSTGRES_HOST", "localhost")
         port = data.get("POSTGRES_PORT", 5432)
-        db = data.get("POSTGRES_DB", "hedge_fund_db")
+        db = data.get("POSTGRES_DB", "alphahive_db")
         return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
 
     @field_validator("REDIS_URL", mode="before")

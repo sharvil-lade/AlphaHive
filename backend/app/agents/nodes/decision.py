@@ -1,22 +1,23 @@
 import json
 import logging
-import httpx
 from datetime import datetime
 from uuid import UUID
-from typing import Dict, Any, List
+from typing import Dict, Any
 from sqlalchemy import select
 
-from backend.app.core.config import settings
-from backend.app.db.session import AsyncSessionLocal
-from backend.app.models.models import AgentRun, InvestmentReport
-from backend.app.agents.state import AgentState
-from backend.app.agents.utils import log_agent_activity
+from app.core.config import settings
+from app.db.session import AsyncSessionLocal
+from app.models.models import AgentRun, InvestmentReport
+from app.agents.state import AgentState
+from app.agents.utils import log_agent_activity
+from app.services.llm_client import llm_client
+from app.services.stock_service import stock_service
 
 logger = logging.getLogger("decision-node")
 
 
 async def decision_node(state: AgentState) -> Dict[str, Any]:
-    """Decision node synthesizing analysis streams, calling OpenAI (or fallback) for consensus memo, and saving results."""
+    """Decision node synthesizing analysis streams, calling the LLM client (or local fallback) for consensus memo, and saving results."""
     ticker = state["ticker"]
     run_id = state["run_id"]
     session_id = state["session_id"]
@@ -33,77 +34,73 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
         f"Consolidating all nodes data to compile consensus report for {ticker}..."
     )
 
-    openai_key = settings.OPENAI_API_KEY
-    if openai_key == "your_openai_key_here" or not openai_key:
-        openai_key = None
-
     recommendation = "HOLD"
     confidence_score = 50
     content_markdown = ""
     source = "local_lexical_fallback"
 
-    # Try OpenAI if key is present
-    if openai_key:
-        try:
-            url = "https://api.openai.com/v1/chat/completions"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {openai_key}"
-            }
+    # Try the LLM (via the shared LiteLLM-backed client) if configured
+    if llm_client.is_configured:
+        fundamentals_verdict = quotes.get("agent_verdict") or {}
+        technical_verdict = indicators.get("agent_verdict") or {}
+        risk_verdict = risk_metrics.get("agent_verdict") or {}
 
-            prompt = (
-                f"You are a Senior Investment Officer at a leading hedge fund. You must compile a comprehensive "
-                f"investment research memo and decide on a final Buy/Hold/Sell recommendation with a confidence score (0-100).\n\n"
-                f"Ticker symbol: {ticker}\n"
-                f"Fundamental metrics: {quotes}\n"
-                f"Technical Analysis metrics: {indicators}\n"
-                f"Sentiment vectors: {sentiment}\n"
-                f"Statistical Risk parameters: {risk_metrics}\n"
-                f"Regulatory Risk footnotes context: {sec_context}\n\n"
-                f"Generate a JSON object conforming exactly to this structure:\n"
-                f"{{\n"
-                f"  \"recommendation\": \"BUY\" | \"HOLD\" | \"SELL\",\n"
-                f"  \"confidence_score\": <integer from 0 to 100>,\n"
-                f"  \"memo_markdown\": <comprehensive multi-section markdown synthesis report detailing: "
-                f"1. Executive Summary, 2. Financial Metrics Audit, 3. Technical Crossover analysis, "
-                f"4. Sentiment and Catalyst narrative, 5. SEC footnote risk analysis and Statistical Beta risks. Use professional financial terminology.>\n"
-                f"}}\n"
-                f"Ensure response is valid JSON only."
-            )
+        prompt = (
+            f"You are a Senior Investment Officer at a leading hedge fund, chairing an investment committee. "
+            f"Four independent specialist agents have each analyzed {ticker} on their own and reported back:\n"
+            f"- Fundamentals Agent: {fundamentals_verdict.get('rating', 'n/a')} "
+            f"(confidence {fundamentals_verdict.get('confidence', 'n/a')}%) — "
+            f"{fundamentals_verdict.get('rationale', 'no rationale available')}\n"
+            f"- Technical Agent: {technical_verdict.get('rating', indicators.get('rating', 'n/a'))} "
+            f"(confidence {technical_verdict.get('confidence', 'n/a')}%) — "
+            f"{technical_verdict.get('rationale', 'no rationale available')}\n"
+            f"- News/Sentiment Agent: {sentiment.get('rating', 'n/a')} — "
+            f"{sentiment.get('summary', 'no summary available')}\n"
+            f"- Risk Agent: {risk_verdict.get('rating', 'n/a')} "
+            f"(confidence {risk_verdict.get('confidence', 'n/a')}%) — "
+            f"{risk_verdict.get('rationale', 'no rationale available')}\n\n"
+            f"Weigh these four independent opinions against each other — note explicitly where they agree or "
+            f"disagree — then compile a comprehensive investment research memo and decide on a final "
+            f"Buy/Hold/Sell recommendation with a confidence score (0-100).\n\n"
+            f"Ticker symbol: {ticker}\n"
+            f"Fundamental metrics: {quotes}\n"
+            f"Technical Analysis metrics: {indicators}\n"
+            f"Sentiment vectors: {sentiment}\n"
+            f"Statistical Risk parameters: {risk_metrics}\n"
+            f"Regulatory Risk footnotes context: {sec_context}\n\n"
+            f"Generate a JSON object conforming exactly to this structure:\n"
+            f"{{\n"
+            f"  \"recommendation\": \"BUY\" | \"HOLD\" | \"SELL\",\n"
+            f"  \"confidence_score\": <integer from 0 to 100>,\n"
+            f"  \"memo_markdown\": <comprehensive multi-section markdown synthesis report detailing: "
+            f"1. Executive Summary, 2. Financial Metrics Audit, 3. Technical Crossover analysis, "
+            f"4. Sentiment and Catalyst narrative, 5. SEC footnote risk analysis and Statistical Beta risks. Use professional financial terminology.>\n"
+            f"}}\n"
+            f"Ensure response is valid JSON only."
+        )
 
-            payload = {
-                "model": "gpt-4o-mini",
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": "You are a professional investment committee chatbot returning structured JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.2
-            }
+        result = await llm_client.complete(
+            messages=[
+                {"role": "system", "content": "You are a professional investment committee chatbot returning structured JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            json_mode=True,
+            session_id=session_id,
+            model=settings.LLM_MODEL_SYNTHESIS,
+            # A full multi-section markdown memo takes longer to generate than a
+            # short JSON verdict (the specialist agents' default 20s is too short here).
+            timeout=75.0,
+        )
 
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(url, headers=headers, json=payload)
-                if resp.status_code == 200:
-                    result = resp.json()
-                    content = json.loads(result["choices"][0]["message"]["content"])
-                    recommendation = str(content.get("recommendation", "HOLD")).upper()
-                    confidence_score = int(content.get("confidence_score", 50))
-                    content_markdown = str(content.get("memo_markdown", ""))
-                    source = "openai"
-                    
-                    # Track token budget usage
-                    usage = result.get("usage", {})
-                    total_tokens = usage.get("total_tokens", 0)
-                    if total_tokens > 0:
-                        try:
-                            from backend.app.services.token_budget_service import token_budget_service
-                            await token_budget_service.track_usage(session_id, total_tokens)
-                        except Exception as tracking_err:
-                            logger.error(f"Failed to record token usage: {tracking_err}")
-                else:
-                    logger.error(f"OpenAI decision fetch failed: {resp.text}")
-        except Exception as e:
-            logger.error(f"Error requesting OpenAI decision: {e}")
+        if result:
+            try:
+                content = json.loads(result.content)
+                recommendation = str(content.get("recommendation", "HOLD")).upper()
+                confidence_score = int(content.get("confidence_score", 50))
+                content_markdown = str(content.get("memo_markdown", ""))
+                source = f"llm:{result.model_used}"
+            except (json.JSONDecodeError, TypeError, ValueError) as e:
+                logger.error(f"Failed to parse LLM decision response: {e}")
 
     # Fallback to local rule-based generation
     if not content_markdown:
@@ -139,6 +136,7 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
             recommendation = "HOLD"
 
         # 2. Formulate Markdown template
+        benchmark_label = "Nifty 50" if stock_service.resolve_market(ticker) == "IN" else "S&P 500"
         company_name = quotes.get("name", ticker)
         price = quotes.get("price", 0.0)
         sector = quotes.get("sector", "Technology")
@@ -202,7 +200,7 @@ News headlines and Reddit sentiment returned an aggregated rating of **{sent_rat
 ---
 
 ## 5. Risk Footnotes & Volatility Metrics
-* **Statistical Beta Coefficient:** {beta:.2f} (versus S&P 500 benchmark index)
+* **Statistical Beta Coefficient:** {beta:.2f} (versus {benchmark_label} benchmark index)
 * **Annualized Daily Volatility:** {vol:.2f}% (computed over {risk_metrics.get('history_days', 0)} trading days)
 * **Indexed SEC 10-K Footnote Disclosures:**
   {sec_bullets}

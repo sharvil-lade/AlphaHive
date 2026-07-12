@@ -1,5 +1,5 @@
 # ============================================================
-#  AI Hedge Fund Analyst Platform — Developer Makefile
+#  AlphaHive — Developer Makefile
 # ============================================================
 #
 #  Usage:
@@ -17,8 +17,8 @@
 #    make clean         — remove Python caches and build artefacts
 
 SHELL := /bin/bash
-PYTHON := .venv/Scripts/python
-PIP    := .venv/Scripts/pip
+PYTHON := backend/.venv/Scripts/python
+PIP    := backend/.venv/Scripts/pip
 PYTEST := $(PYTHON) -m pytest
 RUFF   := $(PYTHON) -m ruff
 
@@ -27,7 +27,7 @@ RUFF   := $(PYTHON) -m ruff
 # ── Default target ────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  AI Hedge Fund Analyst Platform — Makefile targets"
+	@echo "  AlphaHive — Makefile targets"
 	@echo "  ─────────────────────────────────────────────────"
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*?##"}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -39,14 +39,14 @@ dev: ## Start infrastructure containers and run the FastAPI dev server
 	@echo "Waiting for services to be healthy..."
 	@sleep 5
 	$(MAKE) migrate
-	PYTHONPATH=. $(PYTHON) -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+	PYTHONPATH=backend $(PYTHON) -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 test: ## Run the full backend pytest test suite
-	PYTHONPATH=. $(PYTEST) backend/tests -v
+	PYTHONPATH=backend $(PYTEST) backend/tests -v
 
 test-ci: ## Run tests in CI mode (no colour, exit on first failure)
-	PYTHONPATH=. $(PYTEST) backend/tests -v --tb=short -x --no-header
+	PYTHONPATH=backend $(PYTEST) backend/tests -v --tb=short -x --no-header
 
 # ── Linting ───────────────────────────────────────────────────────────────────
 lint: ## Run ruff linter over backend/ source
@@ -72,15 +72,16 @@ logs: ## Tail logs from all running containers
 	docker compose logs -f
 
 # ── Database Migrations ───────────────────────────────────────────────────────
+# (env.py adds backend/ to sys.path itself, so no PYTHONPATH needed here)
 migrate: ## Apply pending Alembic database migrations
-	PYTHONPATH=. $(PYTHON) -m alembic -c backend/alembic.ini upgrade head
+	$(PYTHON) -m alembic -c backend/alembic.ini upgrade head
 
 migrate-new: ## Create a new blank Alembic migration (usage: make migrate-new MSG="your message")
-	PYTHONPATH=. $(PYTHON) -m alembic -c backend/alembic.ini revision --autogenerate -m "$(MSG)"
+	$(PYTHON) -m alembic -c backend/alembic.ini revision --autogenerate -m "$(MSG)"
 
 # ── TypeScript Types ──────────────────────────────────────────────────────────
 ts-types: ## Regenerate frontend TypeScript types from Pydantic schemas
-	PYTHONPATH=. $(PYTHON) backend/scripts/generate_ts_types.py
+	$(PYTHON) backend/scripts/generate_ts_types.py
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean: ## Remove Python caches and build artefacts

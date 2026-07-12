@@ -3,8 +3,8 @@ from uuid import UUID
 from typing import Optional, List, Dict, Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.models.models import InvestmentReport, AgentRun
-from backend.app.utils.pdf_generator import generate_report_pdf
+from app.models.models import InvestmentReport, AgentRun
+from app.utils.pdf_generator import generate_report_pdf
 
 logger = logging.getLogger("memo-service")
 
@@ -43,7 +43,7 @@ class MemoService:
 
     async def compile_report_pdf(self, report: InvestmentReport) -> bytes:
         """Helper to generate PDF byte data using xhtml2pdf wrapper."""
-        title = f"Hedge Fund Research Memo: {report.ticker.upper()} ({report.recommendation.upper()})"
+        title = f"AlphaHive Research Memo: {report.ticker.upper()} ({report.recommendation.upper()})"
         return await generate_report_pdf(report.content_markdown, title)
 
 

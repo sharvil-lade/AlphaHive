@@ -40,7 +40,7 @@ class SecService:
             return self._get_mock_filing_text(symbol, form_type)
 
         headers = {
-            "User-Agent": "GrowwAI Analyst sharvil.lade@gmail.com"
+            "User-Agent": "AlphaHive Analyst sharvil.lade@gmail.com"
         }
 
         # Try downloading via SEC EDGAR

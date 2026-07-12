@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from backend.app.schemas.schemas import TechnicalPostureResponse
-from backend.app.services.indicators_service import indicators_service
-from backend.app.services.stock_service import stock_service
-from backend.app.services.ta_scoring import ta_scoring
+from app.schemas.schemas import TechnicalPostureResponse
+from app.services.indicators_service import indicators_service
+from app.services.stock_service import stock_service
+from app.services.ta_scoring import ta_scoring
 
 router = APIRouter()
 

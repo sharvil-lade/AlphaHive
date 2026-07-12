@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
 
-from backend.app.services.stock_service import stock_service
+from app.services.stock_service import stock_service
 
 logger = logging.getLogger("indicators-service")
 

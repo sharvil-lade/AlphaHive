@@ -4,9 +4,9 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.session import get_db
-from backend.app.schemas.schemas import AlertSchema, AlertCreate
-from backend.app.services.automation_service import automation_service
+from app.db.session import get_db
+from app.schemas.schemas import AlertSchema, AlertCreate
+from app.services.automation_service import automation_service
 
 router = APIRouter()
 logger = logging.getLogger("alerts-api")

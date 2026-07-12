@@ -9,11 +9,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.config import settings
-from backend.app.db.session import get_db, AsyncSessionLocal
-from backend.app.models.models import AgentRun, InvestmentReport
-from backend.app.schemas.schemas import AgentRunSchema, AgentRunDetailResponse
-from backend.app.agents.utils import get_redis, log_agent_activity
+from app.core.config import settings
+from app.db.session import get_db, AsyncSessionLocal
+from app.models.models import AgentRun, InvestmentReport
+from app.schemas.schemas import AgentRunSchema, AgentRunDetailResponse
+from app.agents.utils import get_redis, log_agent_activity
 
 router = APIRouter()
 logger = logging.getLogger("agents-api")
@@ -22,7 +22,7 @@ logger = logging.getLogger("agents-api")
 async def execute_agent_workflow(run_id: UUID, session_id: str, ticker: str):
     """Asynchronous background execution of the LangGraph state machine."""
     try:
-        from backend.app.agents.graph import agent_graph
+        from app.agents.graph import agent_graph
         initial_state = {
             "session_id": session_id,
             "ticker": ticker,
@@ -71,7 +71,7 @@ async def run_agent_analysis(
     symbol = symbol.upper()
     
     # Check session token budget
-    from backend.app.services.token_budget_service import token_budget_service
+    from app.services.token_budget_service import token_budget_service
     is_budget_ok = await token_budget_service.check_budget(session_id)
     if not is_budget_ok:
         raise HTTPException(

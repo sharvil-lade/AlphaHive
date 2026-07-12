@@ -1,8 +1,8 @@
 import logging
 from fastapi import APIRouter, HTTPException, status
 
-from backend.app.schemas.schemas import BacktestRequest, BacktestResponse
-from backend.app.services.backtest_service import backtest_service
+from app.schemas.schemas import BacktestRequest, BacktestResponse
+from app.services.backtest_service import backtest_service
 
 router = APIRouter()
 logger = logging.getLogger("backtest-api")

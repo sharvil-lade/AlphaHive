@@ -1,10 +1,25 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import React from "react";
+import { Providers } from "./providers";
+import { ThemeProvider } from "./theme-provider";
+import { Sidebar } from "../components/layout/Sidebar";
+import { ChatSessionProvider } from "../contexts/ChatSessionContext";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 export const metadata: Metadata = {
-  title: "AI Hedge Fund Analyst Platform",
-  description: "Agentic AI Financial Intelligence System - Bloomberg Terminal meets Perplexity AI",
+  title: "AlphaHive",
+  description: "AI-powered stock market research and analysis chat, focused on Indian and global equities.",
 };
 
 export default function RootLayout({
@@ -13,15 +28,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="antialiased min-h-screen bg-background text-foreground flex flex-col">
-        {/* Core Layout Shell */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Main Content Area */}
-          <main className="flex-1 flex flex-col overflow-y-auto">
-            {children}
-          </main>
-        </div>
+    <html lang="en" className={`h-full ${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <body className="antialiased h-screen bg-background text-foreground font-sans flex overflow-hidden">
+        <ThemeProvider>
+          <Providers>
+            <ChatSessionProvider>
+              <Sidebar />
+              <main className="flex-1 flex flex-col overflow-hidden">{children}</main>
+            </ChatSessionProvider>
+          </Providers>
+        </ThemeProvider>
       </body>
     </html>
   );

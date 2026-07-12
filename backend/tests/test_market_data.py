@@ -4,10 +4,10 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from backend.app.main import app
-from backend.app.core.config import settings
-from backend.app.db.session import get_db
-from backend.app.models.models import Stock, StockPrice
+from app.main import app
+from app.core.config import settings
+from app.db.session import get_db
+from app.models.models import Stock, StockPrice
 
 # Use pytest-asyncio to handle async tests
 pytestmark = pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_company_profile_endpoints(client):
     await asyncio.sleep(0.2)
 
     # Verify record was upserted in PostgreSQL database
-    from backend.app.db.session import AsyncSessionLocal
+    from app.db.session import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(Stock).where(Stock.symbol == "AAPL"))
         stock_record = res.scalar_one_or_none()
@@ -90,7 +90,7 @@ async def test_historical_ohlcv_endpoints(client):
     await asyncio.sleep(0.2)
 
     # Verify records were written into stock_prices table
-    from backend.app.db.session import AsyncSessionLocal
+    from app.db.session import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(StockPrice).where(StockPrice.symbol == "MSFT"))
         prices = res.scalars().all()

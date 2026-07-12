@@ -150,3 +150,61 @@ class Alert(Base):
     trigger_value: Mapped[float] = mapped_column(Float)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[str] = mapped_column(String(100), index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    messages: Mapped[List["Message"]] = relationship(
+        "Message", back_populates="conversation", cascade="all, delete-orphan",
+        order_by="Message.created_at",
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(20))  # user, assistant
+    content: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String(20), default="completed")  # pending, running, completed, failed
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    conversation: Mapped["Conversation"] = relationship("Conversation", back_populates="messages")
+    traces: Mapped[List["AgentTrace"]] = relationship(
+        "AgentTrace", back_populates="message", cascade="all, delete-orphan",
+        order_by="AgentTrace.started_at",
+    )
+
+
+class AgentTrace(Base):
+    __tablename__ = "agent_traces"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), index=True
+    )
+    node: Mapped[str] = mapped_column(String(50))  # router, fundamentals, technical, news_sentiment, risk, synthesis
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running, completed, failed
+    summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    message: Mapped["Message"] = relationship("Message", back_populates="traces")

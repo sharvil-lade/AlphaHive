@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 
-from backend.app.core.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger("vector-store")
 
@@ -18,10 +18,6 @@ class VectorStoreService:
         self.qdrant_host = settings.QDRANT_HOST
         self.qdrant_port = settings.QDRANT_PORT
         self._client: Optional[QdrantClient] = None
-        
-        self.openai_key = settings.OPENAI_API_KEY
-        if self.openai_key == "your_openai_key_here" or not self.openai_key:
-            self.openai_key = None
 
     def get_client(self) -> QdrantClient:
         """Lazily initialize Qdrant client connection."""
@@ -30,16 +26,19 @@ class VectorStoreService:
         return self._client
 
     def _generate_embedding(self, text: str) -> List[float]:
-        """Generate a 1536-dimensional embedding using OpenAI, or a deterministic lexical mock fallback."""
-        if self.openai_key:
+        """Generate a 1536-dimensional embedding via the LiteLLM proxy, or a deterministic lexical mock fallback."""
+        if settings.LITELLM_BASE_URL and settings.LITELLM_API_KEY:
             try:
-                # Synchronous-like fetch using LangChain OpenAIEmbeddings
+                # Synchronous-like fetch using LangChain OpenAIEmbeddings, pointed at the LiteLLM proxy
                 from langchain_openai import OpenAIEmbeddings
-                embeddings_model = OpenAIEmbeddings(openai_api_key=self.openai_key)
+                embeddings_model = OpenAIEmbeddings(
+                    openai_api_key=settings.LITELLM_API_KEY,
+                    openai_api_base=settings.LITELLM_BASE_URL,
+                )
                 return embeddings_model.embed_query(text)
             except Exception as e:
-                logger.error(f"OpenAI embedding generation failed: {e}. Falling back to mock.")
-        
+                logger.error(f"LiteLLM embedding generation failed: {e}. Falling back to mock.")
+
         return self._generate_mock_embedding(text)
 
     def _generate_mock_embedding(self, text: str) -> List[float]:

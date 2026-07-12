@@ -334,3 +334,58 @@ class BacktestResponse(BaseModel):
     trades: List[BacktestTrade]
 
 
+# Chat Schemas
+class ConversationCreate(BaseModel):
+    session_id: str
+    title: Optional[str] = None
+
+
+class ConversationSchema(BaseModel):
+    id: UUID
+    session_id: str
+    title: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AgentTraceSchema(BaseModel):
+    id: UUID
+    node: str
+    status: str
+    summary: Optional[str] = None
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MessageSchema(BaseModel):
+    id: UUID
+    conversation_id: UUID
+    role: str
+    content: str
+    status: str
+    created_at: datetime
+    traces: List[AgentTraceSchema] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationDetailResponse(ConversationSchema):
+    messages: List[MessageSchema] = []
+
+
+class ChatMessageCreate(BaseModel):
+    content: str = Field(..., description="Free-form natural language query, e.g. 'Should I buy Reliance right now?'")
+
+
+class ChatMessageCreateResponse(BaseModel):
+    user_message: MessageSchema
+    assistant_message: MessageSchema
+
+

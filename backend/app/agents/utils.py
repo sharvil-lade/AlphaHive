@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any
 from redis.asyncio import Redis
-from backend.app.core.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger("agent-utils")
 
@@ -35,5 +35,17 @@ async def log_agent_activity(
         await redis.expire(cache_key, 86400)
     except Exception as e:
         logger.error(f"Failed to log activity to Redis for run {run_id}: {e}")
-        
+
     return log_entry
+
+
+async def emit_chat_event(message_id: str, event: Dict[str, Any]) -> None:
+    """Push a chat-stream event (agent-status update or text delta) to Redis, read
+    by the SSE endpoint at GET /api/v1/chat/messages/{message_id}/stream."""
+    try:
+        redis = get_redis()
+        cache_key = f"chat_events:{message_id}"
+        await redis.rpush(cache_key, json.dumps(event))
+        await redis.expire(cache_key, 86400)
+    except Exception as e:
+        logger.error(f"Failed to emit chat event to Redis for message {message_id}: {e}")

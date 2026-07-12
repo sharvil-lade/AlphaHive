@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.models import Portfolio, PortfolioHolding
-from backend.app.services.stock_service import stock_service
+from app.models.models import Portfolio, PortfolioHolding
+from app.services.stock_service import stock_service
 
 logger = logging.getLogger("portfolio-service")
 

@@ -3,15 +3,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.session import get_db
-from backend.app.schemas.schemas import (
+from app.db.session import get_db
+from app.schemas.schemas import (
     PortfolioSchema,
     PortfolioHoldingSchema,
     PortfolioHoldingCreate,
     PortfolioHoldingUpdate,
     PortfolioSummaryResponse,
 )
-from backend.app.services.portfolio_service import portfolio_service
+from app.services.portfolio_service import portfolio_service
 
 router = APIRouter()
 logger = logging.getLogger("portfolio-api")

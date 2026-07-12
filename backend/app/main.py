@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 from qdrant_client import QdrantClient
 
-from backend.app.core.config import settings
-from backend.app.core.logging_config import configure_logging
-from backend.app.db.session import get_db
+from app.core.config import settings
+from app.core.logging_config import configure_logging
+from app.db.session import get_db
 
 # ── Structured logging must be configured before any module-level loggers fire ──
 configure_logging(
@@ -18,14 +18,14 @@ configure_logging(
 )
 
 import logging
-logger = logging.getLogger("hedge-fund-backend")
+logger = logging.getLogger("alphahive-backend")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan manager handling startup and shutdown actions."""
     logger.info(
-        "Initializing AI Hedge Fund Analyst Platform API",
+        f"Initializing {settings.PROJECT_NAME} API",
         extra={
             "environment": settings.ENVIRONMENT,
             "postgres": f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}",
@@ -39,26 +39,27 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    version="1.0.0",
+    version=settings.VERSION,
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
-from backend.app.api.v1.endpoints.stocks import router as stocks_router
-from backend.app.api.v1.endpoints.indicators import router as indicators_router
-from backend.app.api.v1.endpoints.sentiment import router as sentiment_router
-from backend.app.api.v1.endpoints.sec import router as sec_router
-from backend.app.api.v1.endpoints.agents import router as agents_router
-from backend.app.api.v1.endpoints.reports import router as reports_router
-from backend.app.api.v1.endpoints.portfolio import router as portfolio_router
-from backend.app.api.v1.endpoints.watchlist import router as watchlist_router
-from backend.app.api.v1.endpoints.alerts import router as alerts_router
-from backend.app.api.v1.endpoints.backtest import router as backtest_router
+from app.api.v1.endpoints.stocks import router as stocks_router
+from app.api.v1.endpoints.indicators import router as indicators_router
+from app.api.v1.endpoints.sentiment import router as sentiment_router
+from app.api.v1.endpoints.sec import router as sec_router
+from app.api.v1.endpoints.agents import router as agents_router
+from app.api.v1.endpoints.reports import router as reports_router
+from app.api.v1.endpoints.portfolio import router as portfolio_router
+from app.api.v1.endpoints.watchlist import router as watchlist_router
+from app.api.v1.endpoints.alerts import router as alerts_router
+from app.api.v1.endpoints.backtest import router as backtest_router
+from app.api.v1.endpoints.chat import router as chat_router
 from fastapi.responses import PlainTextResponse
-from backend.app.core.rate_limiter import limit_60_per_min, limit_10_per_min
-from backend.app.core.metrics import MetricsMiddleware
-from backend.app.core import metrics
+from app.core.rate_limiter import limit_60_per_min, limit_10_per_min
+from app.core.metrics import MetricsMiddleware
+from app.core import metrics
 
 
 # ── CORS ── Use configured origins (hardened in production via CORS_ORIGINS env var)
@@ -85,6 +86,7 @@ app.include_router(portfolio_router, prefix=f"{settings.API_V1_STR}/portfolios",
 app.include_router(watchlist_router, prefix=f"{settings.API_V1_STR}/watchlist",  tags=["watchlist"],  dependencies=[Depends(limit_60_per_min)])
 app.include_router(alerts_router,    prefix=f"{settings.API_V1_STR}/alerts",     tags=["alerts"],     dependencies=[Depends(limit_60_per_min)])
 app.include_router(backtest_router,  prefix=f"{settings.API_V1_STR}/backtest",   tags=["backtest"],   dependencies=[Depends(limit_60_per_min)])
+app.include_router(chat_router,      prefix=f"{settings.API_V1_STR}/chat",       tags=["chat"],       dependencies=[Depends(limit_10_per_min)])
 
 
 @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)

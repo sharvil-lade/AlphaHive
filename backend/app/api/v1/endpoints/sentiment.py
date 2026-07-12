@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
-from backend.app.schemas.schemas import SentimentResponse
-from backend.app.services.sentiment_service import sentiment_service
+from app.schemas.schemas import SentimentResponse
+from app.services.sentiment_service import sentiment_service
 
 from typing import Optional
 

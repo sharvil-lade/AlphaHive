@@ -181,5 +181,43 @@ export async function runBacktest(
   return res.json();
 }
 
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+export async function createConversation(sessionId: string, title?: string): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, title }),
+  });
+  if (!res.ok) throw new Error(`Failed to create conversation: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchConversations(sessionId: string): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations?session_id=${sessionId}`);
+  if (!res.ok) throw new Error(`Failed to fetch conversations: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchConversationDetail(conversationId: string): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations/${conversationId}`);
+  if (!res.ok) throw new Error(`Failed to fetch conversation: ${res.statusText}`);
+  return res.json();
+}
+
+export async function postChatMessage(conversationId: string, content: string): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error(`Failed to send message: ${res.statusText}`);
+  return res.json();
+}
+
+export function getChatStreamUrl(messageId: string): string {
+  return `${API_BASE_URL}/api/v1/chat/messages/${messageId}/stream`;
+}
+
 
 

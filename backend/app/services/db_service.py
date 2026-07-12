@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert
 
-from backend.app.models.models import Stock, StockPrice
+from app.models.models import Stock, StockPrice
 
 logger = logging.getLogger("db-service")
 

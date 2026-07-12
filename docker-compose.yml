@@ -5,25 +5,26 @@ services:
 
   postgres:
     image: postgres:15-alpine
-    container_name: hedge_fund_postgres
+    container_name: alphahive_postgres
     restart: always
+    env_file: .env
     environment:
-      POSTGRES_DB: hedge_fund_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5435:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d hedge_fund_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: hedge_fund_redis
+    container_name: alphahive_redis
     restart: always
     ports:
       - "6379:6379"
@@ -37,7 +38,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: hedge_fund_qdrant
+    container_name: alphahive_qdrant
     restart: always
     ports:
       - "6333:6333"
@@ -56,10 +57,19 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hedge_fund_backend
     restart: always
+    # No fixed container_name: the backend is stateless by design (every request
+    # is scoped by a client-supplied session_id, rate limiting and market-data
+    # caching are Redis-backed, DB access is pooled), so it's a valid target for
+    # horizontal scaling — the actual blockers to that are deployment-topology
+    # ones, not app-code ones. Under plain `docker compose up --scale backend=N`
+    # the fixed host port below would still conflict across replicas (fine for
+    # this single-instance dev/small-deployment setup); real horizontal scaling
+    # belongs behind a reverse proxy/load balancer or a container orchestrator
+    # (Kubernetes Deployment + Service, ECS, etc.) — see docs/DEPLOYMENT.md.
     ports:
       - "8000:8000"
+    env_file: .env
     environment:
       - ENVIRONMENT=production
       - POSTGRES_HOST=postgres
@@ -68,13 +78,9 @@ services:
       - REDIS_PORT=6379
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/hedge_fund_db
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
-      # Override these via .env or CI secrets:
-      # - OPENAI_API_KEY=sk-...
-      # - FINNHUB_API_KEY=...
-      # - CORS_ORIGINS=https://app.example.com
-      # - MAX_TOKENS_PER_SESSION=100000
+      # All other secrets (LLM, market-data API keys) are loaded from the root .env via env_file above.
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,7 +99,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: hedge_fund_frontend
+    container_name: alphahive_frontend
     restart: always
     ports:
       - "3000:3000"
@@ -111,7 +117,7 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: hedge_fund_prometheus
+    container_name: alphahive_prometheus
     restart: always
     profiles: ["monitoring"]
     ports:
@@ -129,7 +135,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    container_name: hedge_fund_grafana
+    container_name: alphahive_grafana
     restart: always
     profiles: ["monitoring"]
     ports:
