@@ -10,96 +10,65 @@ logger = logging.getLogger("synthesis-node")
 
 
 def _build_analysis_prompt(state: AgentState) -> str:
+    """Master decision prompt: weigh every slave agent's verdict, grounded in the
+    user's portfolio, and answer the question."""
     ticker = state.get("ticker") or ""
-    quotes = state.get("quotes") or {}
-    indicators = state.get("indicators") or {}
-    sentiment = state.get("sentiment") or {}
-    risk_metrics = state.get("risk_metrics") or {}
-    sec_context = state.get("sec_context") or []
+    findings = state.get("findings") or []
+    portfolio_context = state.get("portfolio_context") or "The user's portfolio is empty."
 
-    fundamentals_verdict = quotes.get("agent_verdict") or {}
-    technical_verdict = indicators.get("agent_verdict") or {}
-    risk_verdict = risk_metrics.get("agent_verdict") or {}
-
-    sec_bullets = "\n".join(
-        f"- ({c.get('section', 'Risk Factors')}): {c.get('text', '')[:300]}" for c in sec_context
-    ) or "No SEC filing context available."
+    findings_block = "\n\n".join(
+        f"**{f.get('label', f.get('agent', 'Agent'))} Agent:**\n{f.get('verdict', 'no verdict')}"
+        for f in findings
+    ) or "No specialist verdicts were produced."
 
     return (
-        "You are the lead analyst on a stock research team. Four independent specialist agents have "
-        f"each analyzed {ticker} on their own and reported back their read of the data. The user asked:\n"
+        "You are the lead analyst on a stock research team. Your specialist agents each "
+        f"independently analysed {ticker} and reported their verdicts below. The user asked:\n"
         f'"{state["query"]}"\n\n'
-        f"**Fundamentals Agent** — {fundamentals_verdict.get('rating', 'n/a')} "
-        f"(confidence {fundamentals_verdict.get('confidence', 'n/a')}%): "
-        f"{fundamentals_verdict.get('rationale', 'no rationale available')}\n"
-        f"Raw data: {quotes}\n\n"
-        f"**Technical Agent** — {technical_verdict.get('rating', indicators.get('rating', 'n/a'))} "
-        f"(confidence {technical_verdict.get('confidence', 'n/a')}%): "
-        f"{technical_verdict.get('rationale', 'no rationale available')}\n"
-        f"Raw data: {indicators}\n\n"
-        f"**News/Sentiment Agent** — {sentiment.get('rating', 'n/a')}: "
-        f"{sentiment.get('summary', 'no summary available')}\n\n"
-        f"**Risk Agent** — {risk_verdict.get('rating', 'n/a')} "
-        f"(confidence {risk_verdict.get('confidence', 'n/a')}%): "
-        f"{risk_verdict.get('rationale', 'no rationale available')}\n"
-        f"Raw data: {risk_metrics}\n"
-        f"SEC risk disclosures:\n{sec_bullets}\n\n"
-        "Weigh these four independent opinions against each other — note explicitly where they agree or "
-        "disagree — and write a clear, well-structured markdown response answering the user's question "
-        "directly. Include a brief summary verdict (Buy/Hold/Sell-leaning) with confidence, then supporting "
-        "detail. Use a professional but conversational tone, not a rigid template. Keep it focused — a few "
-        "short sections, not a wall of boilerplate."
+        f"--- The user's current portfolio (use this to make the advice personal) ---\n"
+        f"{portfolio_context}\n\n"
+        f"--- Specialist agent verdicts ---\n{findings_block}\n\n"
+        "Weigh these independent verdicts against each other — note explicitly where they "
+        "agree or disagree — and, where relevant, relate the answer to the user's actual "
+        "holdings (concentration, overlap with what they own, position sizing). Write a "
+        "clear, well-structured markdown response answering the user's question directly. "
+        "Include a brief summary verdict (Buy/Hold/Sell-leaning) with confidence, then "
+        "supporting detail. Professional but conversational — a few short sections, not a "
+        "wall of boilerplate."
     )
 
 
 def _build_general_prompt(state: AgentState) -> str:
+    portfolio_context = state.get("portfolio_context") or ""
+    portfolio_note = (
+        f"\n\nFor context, the user's portfolio is:\n{portfolio_context}"
+        if portfolio_context and "empty" not in portfolio_context.lower()
+        else ""
+    )
     return (
-        "You are AlphaHive, a helpful stock market research assistant focused on Indian and global "
-        "equity markets. Answer the user's message directly and conversationally in markdown. If the "
-        "message isn't really about a specific stock, just answer it helpfully — don't force a "
-        "buy/hold/sell verdict.\n\n"
+        "You are AlphaHive, a helpful stock market research assistant focused on Indian and "
+        "global equity markets. Answer the user's message directly and conversationally in "
+        "markdown. If the message isn't really about a specific stock, just answer it "
+        "helpfully — don't force a buy/hold/sell verdict."
+        f"{portfolio_note}\n\n"
         f'User message: "{state["query"]}"'
     )
 
 
 def _local_fallback_markdown(state: AgentState) -> str:
-    """Deterministic fallback if no LLM is reachable — mirrors decision.py's rule-based
-    scoring, adapted for the lighter chat context."""
+    """Deterministic fallback if no LLM is reachable."""
     ticker = state.get("ticker") or ""
-    if not ticker:
+    findings = state.get("findings") or []
+    if not ticker or not findings:
         return (
             "I can share general market information, but I don't have a live LLM connection "
-            "configured right now to answer open-ended questions in depth. Ask me about a specific "
-            'stock (e.g. "Should I buy Reliance?") for a data-driven analysis.'
+            "configured right now to answer open-ended questions in depth. Ask me about a "
+            'specific stock (e.g. "Should I buy Reliance?") for a data-driven analysis.'
         )
-
-    indicators = state.get("indicators") or {}
-    sentiment = state.get("sentiment") or {}
-    risk_metrics = state.get("risk_metrics") or {}
-    quotes = state.get("quotes") or {}
-
-    score = 50.0
-    score += indicators.get("score", 0) * 0.2
-    score += sentiment.get("score", 0) * 0.2
-    pct_change = quotes.get("percent_change", 0.0)
-    score += min(max(pct_change * 2.0, -10.0), 10.0)
-    beta = risk_metrics.get("beta", 1.0)
-    if beta > 1.5:
-        score -= 5.0
-    elif beta < 0.8:
-        score += 5.0
-    confidence = int(min(max(score, 0.0), 100.0))
-    recommendation = "BUY" if confidence >= 65 else "SELL" if confidence <= 35 else "HOLD"
-    vol = risk_metrics.get("annualized_volatility", 0.0) * 100
-
+    bullets = "\n".join(f"- **{f.get('label')}**: {f.get('verdict', '')[:200]}" for f in findings)
     return (
-        f"## {ticker} — Quick Take (Deterministic Fallback)\n\n"
-        f"**Recommendation: {recommendation}** (confidence {confidence}%)\n\n"
-        f"- Price: {quotes.get('price', 'n/a')} ({quotes.get('percent_change', 0):.2f}% today)\n"
-        f"- Technical rating: {indicators.get('rating', 'HOLD')} (score {indicators.get('score', 0)})\n"
-        f"- Sentiment rating: {sentiment.get('rating', 'HOLD')} (score {sentiment.get('score', 0)})\n"
-        f"- Beta: {beta:.2f}, annualized volatility: {vol:.2f}%\n\n"
-        "_This is a deterministic quantitative fallback — no LLM was reachable for a full narrative synthesis._"
+        f"## {ticker} — Specialist Read (No-LLM Fallback)\n\n{bullets}\n\n"
+        "_No LLM was reachable for a full narrative synthesis — this is the raw specialist output._"
     )
 
 
@@ -110,17 +79,19 @@ async def synthesis_node(state: AgentState) -> Dict[str, Any]:
     message_id = state["message_id"]
     session_id = state.get("session_id")
 
-    start_log = await log_agent_activity(message_id, "synthesis", "Synthesizing final response...")
+    start_log = await log_agent_activity(message_id, "synthesis", "Synthesizing final decision...")
     await emit_chat_event(message_id, {"type": "agent-status", "node": "synthesis", "status": "running"})
 
     ticker = state.get("ticker") or ""
     needs_agents = state.get("needs_agents", False)
+    has_findings = bool(state.get("findings"))
 
     full_content = ""
     source = "local_fallback"
 
     if llm_client.is_configured:
-        prompt = _build_analysis_prompt(state) if (ticker and needs_agents) else _build_general_prompt(state)
+        use_analysis = ticker and needs_agents and has_findings
+        prompt = _build_analysis_prompt(state) if use_analysis else _build_general_prompt(state)
         messages = [
             {
                 "role": "system",
@@ -148,7 +119,7 @@ async def synthesis_node(state: AgentState) -> Dict[str, Any]:
         await emit_chat_event(message_id, {"type": "text-delta", "delta": full_content})
 
     await emit_chat_event(message_id, {"type": "agent-status", "node": "synthesis", "status": "completed"})
-    success_log = await log_agent_activity(message_id, "synthesis", f"Response synthesized via {source}.")
+    success_log = await log_agent_activity(message_id, "synthesis", f"Decision synthesized via {source}.")
 
     return {
         "decision": {"content_markdown": full_content, "source": source},

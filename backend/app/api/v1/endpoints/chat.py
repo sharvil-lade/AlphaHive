@@ -44,10 +44,25 @@ async def _persist_traces_from_events(message_id: UUID) -> None:
         logger.error(f"Failed to persist agent traces for message {message_id}: {e}")
 
 
+async def _load_portfolio_context(session_id: str) -> str:
+    """Best-effort: build the portfolio summary the agents get as context."""
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.services.portfolio_service import portfolio_service
+
+        async with AsyncSessionLocal() as db:
+            return await portfolio_service.build_context_text(db, session_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to load portfolio context for session {session_id}: {e}")
+        return "The user's portfolio could not be loaded."
+
+
 async def execute_chat_workflow(assistant_message_id: UUID, session_id: str, query: str) -> None:
     """Background execution of the chat LangGraph state machine for one turn."""
     try:
         from app.agents.graph import chat_graph
+
+        portfolio_context = await _load_portfolio_context(session_id)
 
         initial_state = {
             "session_id": session_id,
@@ -66,6 +81,10 @@ async def execute_chat_workflow(assistant_message_id: UUID, session_id: str, que
             "market": "IN",
             "intent": "general_question",
             "needs_agents": False,
+            "tickers": [],
+            "selected_agents": [],
+            "portfolio_context": portfolio_context,
+            "findings": [],
         }
         result = await chat_graph.ainvoke(initial_state)
         content = (result.get("decision") or {}).get("content_markdown", "")

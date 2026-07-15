@@ -4,8 +4,11 @@ import { Loader2, CheckCircle2, XCircle, Circle } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { AgentStatus } from "../../hooks/useChatSession";
 
+// Node keys MUST match the SSE `node` values emitted by the backend chat graph
+// (app/agents/chat_nodes.py + graph.py). Master-slave topology: the supervisor
+// plans, the specialist slaves run, then synthesis writes the decision.
 const PIPELINE = [
-  { key: "router", label: "Understanding query" },
+  { key: "supervisor", label: "Planning" },
   { key: "fundamentals", label: "Fundamentals" },
   { key: "technical", label: "Technical" },
   { key: "news_sentiment", label: "News & Sentiment" },

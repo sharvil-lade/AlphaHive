@@ -65,6 +65,53 @@ class PortfolioService:
         await db.commit()
         return holding
 
+    async def import_holdings(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        holdings: List[Dict[str, Any]],
+        replace: bool = True,
+    ) -> Dict[str, Any]:
+        """Bulk-import holdings (e.g. from a Groww sync/upload).
+
+        With `replace=True` (default) the portfolio is treated as a full sync of the
+        broker account: existing holdings are cleared first, then the imported set is
+        inserted. With `replace=False` each row is merged via weighted-average cost.
+        Returns a small summary of what was imported.
+        """
+        portfolio = await self.get_or_create_portfolio(db, session_id)
+
+        if replace:
+            existing = await db.execute(
+                select(PortfolioHolding).where(PortfolioHolding.portfolio_id == portfolio.id)
+            )
+            for h in existing.scalars().all():
+                await db.delete(h)
+            await db.flush()
+
+        imported = 0
+        for row in holdings:
+            symbol = str(row.get("symbol", "")).upper().strip()
+            shares = float(row.get("shares", 0) or 0)
+            avg = float(row.get("average_buy_price", 0) or 0)
+            if not symbol or shares <= 0:
+                continue
+            if replace:
+                db.add(
+                    PortfolioHolding(
+                        portfolio_id=portfolio.id,
+                        symbol=symbol,
+                        shares=shares,
+                        average_buy_price=avg,
+                    )
+                )
+            else:
+                await self.add_holding(db, session_id, symbol, shares, avg)
+            imported += 1
+
+        await db.commit()
+        return {"imported": imported, "replaced": replace, "portfolio_id": str(portfolio.id)}
+
     async def update_holding(
         self, db: AsyncSession, holding_id: uuid.UUID, shares: float, average_buy_price: float
     ) -> Optional[PortfolioHolding]:
@@ -211,6 +258,36 @@ class PortfolioService:
             "holdings": holdings_detail,
             "sector_weights": sector_weights
         }
+
+    async def build_context_text(self, db: AsyncSession, session_id: str) -> str:
+        """Render a compact, LLM-friendly summary of the user's holdings.
+
+        Injected into the chat agents so every answer can be grounded in what the
+        user actually owns. Returns a short "empty" note if there are no holdings.
+        Never raises — portfolio context is best-effort enrichment, not critical path.
+        """
+        try:
+            summary = await self.get_portfolio_summary(db, session_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Could not build portfolio context for {session_id}: {e}")
+            return "The user's portfolio could not be loaded."
+
+        holdings = summary.get("holdings", [])
+        if not holdings:
+            return "The user's portfolio is empty — they have no holdings yet."
+
+        lines = [
+            f"Total value ₹{summary['total_value']:.0f} (cost ₹{summary['total_cost']:.0f}, "
+            f"P/L {summary['gain_loss_percentage']:+.1f}%), weighted beta "
+            f"{summary['weighted_beta']:.2f}. Holdings:"
+        ]
+        for h in holdings:
+            lines.append(
+                f"- {h['symbol']}: {h['shares']:g} sh @ avg ₹{h['average_buy_price']:.2f}, "
+                f"now ₹{h['current_price']:.2f} ({h['gain_loss_percentage']:+.1f}%), "
+                f"sector {h.get('sector', 'n/a')}"
+            )
+        return "\n".join(lines)
 
 
 portfolio_service = PortfolioService()

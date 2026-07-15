@@ -5,8 +5,14 @@ from app.agents.nodes.technical import technical_node
 from app.agents.nodes.news import news_node
 from app.agents.nodes.risk import risk_node
 from app.agents.nodes.decision import decision_node
-from app.agents.nodes.router import router_node
 from app.agents.nodes.synthesis import synthesis_node
+from app.agents.chat_nodes import (
+    supervisor_node,
+    fundamentals_node,
+    technical_node as chat_technical_node,
+    sentiment_node as chat_sentiment_node,
+    risk_node as chat_risk_node,
+)
 from app.agents.utils import log_agent_activity
 
 async def init_node(state: AgentState):
@@ -57,42 +63,55 @@ def create_agent_graph():
 agent_graph = create_agent_graph()
 
 
-def _route_after_router(state: AgentState):
-    """Fan out to all 4 specialists in parallel if the query needs a full analysis,
-    otherwise short-circuit straight to synthesis (cheap path for general chat)."""
-    if state.get("needs_agents"):
-        return ["research", "technical", "news", "risk"]
+# Node names for the chat graph's specialist slaves. These MUST match both the
+# supervisor plan's `selected_agents` keys and the SSE `node` names the frontend
+# AgentTracePanel renders.
+_CHAT_SPECIALIST_NODES = ["fundamentals", "technical", "news_sentiment", "risk"]
+
+
+def _route_after_supervisor(state: AgentState):
+    """Master delegation: fan out only to the specialist slaves the supervisor
+    selected. If it decided no research is needed (general question / no ticker),
+    short-circuit straight to synthesis."""
+    selected = state.get("selected_agents") or []
+    if state.get("needs_agents") and selected:
+        return [n for n in selected if n in _CHAT_SPECIALIST_NODES] or ["synthesis"]
     return ["synthesis"]
 
 
 def create_chat_graph():
-    """Chat graph: free-form query -> router (extracts tickers/intent) -> parallel
-    specialist fan-out (only if needed) -> synthesis (streams the final answer).
+    """Chat graph — master/slave (supervisor/worker) agentic architecture.
 
-    Distinct from `create_agent_graph()` above (the original ticker-only flow, kept
-    as-is and still reachable via POST /api/v1/agents/run) — this graph is driven by
-    a natural-language `query` instead of a pre-selected `ticker`, and its synthesis
-    node streams text + emits chat SSE events instead of writing to Postgres itself.
+    free-form query
+      -> supervisor (master):   portfolio-aware planner; picks tickers + which slaves
+      -> [fundamentals | technical | news_sentiment | risk] (slaves, parallel):
+             each a real create_react_agent that calls its own API tools
+      -> synthesis (master):    streams the final, portfolio-aware decision
+
+    Distinct from `create_agent_graph()` above (the original ticker-only memo flow,
+    kept as-is and still reachable via POST /api/v1/agents/run) — this graph is
+    driven by a natural-language `query`, and its synthesis node streams text +
+    emits chat SSE events instead of writing to Postgres itself.
     """
     workflow = StateGraph(AgentState)
 
-    workflow.add_node("router", router_node)
-    workflow.add_node("research", research_node)
-    workflow.add_node("technical", technical_node)
-    workflow.add_node("news", news_node)
-    workflow.add_node("risk", risk_node)
+    workflow.add_node("supervisor", supervisor_node)
+    workflow.add_node("fundamentals", fundamentals_node)
+    workflow.add_node("technical", chat_technical_node)
+    workflow.add_node("news_sentiment", chat_sentiment_node)
+    workflow.add_node("risk", chat_risk_node)
     workflow.add_node("synthesis", synthesis_node)
 
-    workflow.set_entry_point("router")
+    workflow.set_entry_point("supervisor")
 
     workflow.add_conditional_edges(
-        "router", _route_after_router, ["research", "technical", "news", "risk", "synthesis"]
+        "supervisor",
+        _route_after_supervisor,
+        [*_CHAT_SPECIALIST_NODES, "synthesis"],
     )
 
-    workflow.add_edge("research", "synthesis")
-    workflow.add_edge("technical", "synthesis")
-    workflow.add_edge("news", "synthesis")
-    workflow.add_edge("risk", "synthesis")
+    for node in _CHAT_SPECIALIST_NODES:
+        workflow.add_edge(node, "synthesis")
     workflow.add_edge("synthesis", END)
 
     return workflow.compile()

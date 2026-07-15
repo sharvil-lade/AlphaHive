@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, Upload, KeyRound, Loader2 } from "lucide-react";
 import { useSessionId } from "../../hooks/useSessionId";
-import { fetchPortfolioSummary, addPortfolioHolding, updatePortfolioHolding, deletePortfolioHolding } from "../../services/api";
+import {
+  fetchPortfolioSummary,
+  addPortfolioHolding,
+  updatePortfolioHolding,
+  deletePortfolioHolding,
+  importGrowwPortfolio,
+  importPortfolioFile,
+} from "../../services/api";
 import { Card, Button, Input, PageHeader, Delta } from "../../components/ui/primitives";
 
 export default function PortfolioPage() {
@@ -18,6 +25,12 @@ export default function PortfolioPage() {
   const [editShares, setEditShares] = useState("");
   const [editPrice, setEditPrice] = useState("");
 
+  const [showImport, setShowImport] = useState(false);
+  const [growwToken, setGrowwToken] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const { data: summary } = useQuery({
     queryKey: ["portfolio", sessionId],
     queryFn: () => fetchPortfolioSummary(sessionId),
@@ -25,6 +38,39 @@ export default function PortfolioPage() {
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["portfolio", sessionId] });
+
+  const handleGrowwImport = async () => {
+    if (!growwToken.trim()) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const result = await importGrowwPortfolio(sessionId, growwToken.trim(), true);
+      setImportMsg({ ok: true, text: result.message || "Imported from Groww." });
+      setGrowwToken("");
+      refresh();
+    } catch (e: any) {
+      setImportMsg({ ok: false, text: e.message || "Groww import failed." });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const result = await importPortfolioFile(sessionId, file, true);
+      setImportMsg({ ok: true, text: result.message || "Imported from file." });
+      refresh();
+    } catch (err: any) {
+      setImportMsg({ ok: false, text: err.message || "File import failed." });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,14 +97,17 @@ export default function PortfolioPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <PageHeader title="Portfolio" description="Your holdings, gain/loss, and risk exposure" />
+      <PageHeader
+        title="Portfolio"
+        description="Optional — add your Groww holdings so the chat can research in the context of what you own"
+      />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl w-full mx-auto">
-        {summary && (
+        {summary && summary.holdings.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <Card>
               <div className="text-[11px] text-mutedText mb-1">Total Value</div>
-              <div className="text-lg font-semibold">${summary.total_value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+              <div className="text-lg font-semibold">₹{summary.total_value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
             </Card>
             <Card>
               <div className="text-[11px] text-mutedText mb-1">Gain / Loss</div>
@@ -77,10 +126,66 @@ export default function PortfolioPage() {
 
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-mutedText">Holdings</h2>
-          <Button variant="outline" onClick={() => setIsAdding((v) => !v)}>
-            <Plus className="w-3.5 h-3.5" /> Add position
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setShowImport((v) => !v); setImportMsg(null); }}>
+              <Upload className="w-3.5 h-3.5" /> Import from Groww
+            </Button>
+            <Button variant="outline" onClick={() => setIsAdding((v) => !v)}>
+              <Plus className="w-3.5 h-3.5" /> Add position
+            </Button>
+          </div>
         </div>
+
+        {showImport && (
+          <Card className="space-y-4">
+            <div>
+              <div className="text-sm font-medium mb-1 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5" /> Option 1 — Groww access token
+              </div>
+              <p className="text-[12px] text-mutedText mb-2">
+                Generate a daily access token on Groww&apos;s{" "}
+                <a href="https://groww.in/trade-api" target="_blank" rel="noreferrer" className="underline">Trading APIs page</a>{" "}
+                (requires a Groww API subscription; tokens expire at 6 AM daily) and paste it here to sync your holdings.
+              </p>
+              <div className="flex flex-wrap gap-2 items-end">
+                <Input
+                  value={growwToken}
+                  onChange={(e) => setGrowwToken(e.target.value)}
+                  placeholder="Paste Groww access token"
+                  className="flex-1 min-w-[220px]"
+                  type="password"
+                />
+                <Button onClick={handleGrowwImport} disabled={importing || !growwToken.trim()}>
+                  {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Sync
+                </Button>
+              </div>
+            </div>
+
+            <div className="border-t border-surface-border pt-4">
+              <div className="text-sm font-medium mb-1 flex items-center gap-1.5">
+                <Upload className="w-3.5 h-3.5" /> Option 2 — Upload a statement (no subscription)
+              </div>
+              <p className="text-[12px] text-mutedText mb-2">
+                Export Holdings or P&amp;L from Groww&apos;s Reports section (CSV or Excel) and upload the file.
+                Importing replaces your current holdings.
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileImport}
+                disabled={importing}
+                className="block text-sm text-mutedText file:mr-3 file:rounded-md file:border file:border-surface-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-surface-hover"
+              />
+            </div>
+
+            {importMsg && (
+              <div className={importMsg.ok ? "text-[12px] text-bullish" : "text-[12px] text-bearish"}>
+                {importMsg.text}
+              </div>
+            )}
+          </Card>
+        )}
 
         {isAdding && (
           <Card>
@@ -156,7 +261,8 @@ export default function PortfolioPage() {
               {(!summary || summary.holdings.length === 0) && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-mutedText text-sm">
-                    No holdings yet — add your first position above.
+                    No holdings yet — import from Groww or add a position above. This is optional;
+                    you can research any stock in chat without a portfolio.
                   </td>
                 </tr>
               )}

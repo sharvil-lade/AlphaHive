@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageSquare, MessageSquarePlus, Briefcase, Star, BellRing, LineChart } from "lucide-react";
+import { MessageSquare, MessageSquarePlus, Briefcase } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useChatSessionContext } from "../../contexts/ChatSessionContext";
 
+// Watchlist, Alerts, and Backtest are parked for a future release — their pages
+// still exist in the tree but are no longer linked. The active app is chat +
+// (optional) portfolio only.
 const NAV_ITEMS = [
   { href: "/", label: "Chat", icon: MessageSquare },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
-  { href: "/watchlist", label: "Watchlist", icon: Star },
-  { href: "/alerts", label: "Alerts", icon: BellRing },
-  { href: "/backtest", label: "Backtest", icon: LineChart },
 ];
 
 export function Sidebar() {

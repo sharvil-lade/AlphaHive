@@ -117,6 +117,19 @@ class PortfolioSummaryResponse(BaseModel):
     sector_weights: Dict[str, float]
 
 
+class GrowwImportRequest(BaseModel):
+    """Import holdings via the official Groww Trade API using a daily access token."""
+    access_token: str
+    replace: bool = True
+
+
+class PortfolioImportResult(BaseModel):
+    imported: int
+    replaced: bool
+    portfolio_id: str
+    message: str
+
+
 
 # Watchlist Schemas
 class WatchlistCreate(BaseModel):

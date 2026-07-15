@@ -21,10 +21,16 @@ class AgentState(TypedDict):
     decision: Dict[str, Any]
     logs: Annotated[List[Dict[str, Any]], append_logs]
 
-    # Chat-graph-only fields (see agents/nodes/router.py, agents/nodes/synthesis.py).
+    # Chat-graph-only fields (see agents/chat_nodes.py, agents/graph.py:create_chat_graph).
     # Unused by the original ticker-only graph (agents/graph.py:create_agent_graph).
     query: str
     message_id: str
     market: str  # "IN" | "US"
     intent: str  # "analysis" | "comparison" | "general_question"
     needs_agents: bool
+
+    # Master/slave chat-graph fields (new agentic architecture):
+    tickers: List[str]                # all tickers the master planned to analyse
+    selected_agents: List[str]        # which specialist slaves the master dispatched
+    portfolio_context: str            # compact summary of the user's holdings, injected as agent context
+    findings: Annotated[List[Dict[str, Any]], append_logs]  # each slave's verdict, appended in parallel

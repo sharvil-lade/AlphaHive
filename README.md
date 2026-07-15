@@ -1,11 +1,24 @@
 # 🐝 AlphaHive v1.0
 
-A chat-first AI stock market research assistant. Ask a free-form question about any Indian (NSE/BSE)
-or global stock — a router agent understands the query, then independent fundamentals/technical/
-news-sentiment/risk agents each analyze the data and form their own verdict, and a synthesis agent
-weighs all four against each other and streams back a clear, conversational answer. Portfolio,
-watchlist, price/RSI/sentiment alerts, and strategy backtesting are available as secondary tools
-alongside the chat.
+A chat-first AI stock market research assistant built on a **master–slave (supervisor/worker)
+agent architecture**. Ask a free-form question about any Indian (NSE/BSE) or global stock — a
+**master supervisor agent** plans the work (grounded in your portfolio, if you added one), then
+dispatches independent **specialist slave agents** (fundamentals / technical / news-sentiment /
+risk). Each specialist is a real LangGraph `create_react_agent` bound to its own **API tools**: it
+decides which tools to call, reasons over the results, and reports a verdict. The master then weighs
+those verdicts against each other and streams back a clear, conversational decision.
+
+You can optionally **import your Groww portfolio** (via Groww's official Trade API token, or by
+uploading a Holdings/P&L export) so the agents research *in the context of what you actually own* —
+but the portfolio is entirely optional; the app works as a normal research chat without it.
+
+> **Adding a new capability is a one-liner:** write a `@tool` wrapping an API in
+> [`app/agents/tools/`](backend/app/agents/tools/) and add it to a specialist's tool list in
+> [`app/agents/specialists.py`](backend/app/agents/specialists.py). The react agent discovers it
+> automatically.
+>
+> _Watchlist, price/RSI/sentiment alerts, and strategy backtesting are parked for a future release —
+> the code remains in the tree but is unmounted so the active app is just **chat + portfolio**._
 
 ---
 
@@ -14,7 +27,10 @@ alongside the chat.
 | Feature | Description |
 |---|---|
 | **Chat-first research** | Ask anything about a stock in plain language; get a streamed, conversational answer — not a rigid template |
-| **Genuine multi-agent analysis** | A router classifies the query, then fundamentals/technical/news-sentiment/risk agents each independently analyze the data and report their own rating + rationale — synthesis then weighs all four (noting where they agree or disagree) rather than just narrating raw numbers |
+| **Master–slave agent architecture** | A master supervisor agent plans the work and dispatches only the specialist slave agents it needs; each specialist is a real tool-calling `create_react_agent` that fetches its own data, reasons, and reports a verdict; the master then weighs all verdicts (noting where they agree or disagree) into a final decision |
+| **APIs as agent tools** | Every data source (quote, profile, technical, news-sentiment, risk, SEC filings, portfolio) is a LangChain `@tool` bound to the agent that needs it — extend the system by adding a tool and assigning it to an agent, no orchestration rewrite |
+| **Portfolio-aware research** | Optionally import your Groww holdings; the agents then research any question in the context of what you actually own (concentration, overlap, position sizing) |
+| **Groww portfolio import** | Sync holdings via Groww's official Trade API (paste a daily access token), or upload a Holdings/P&L export (CSV/Excel) — no subscription needed for the file path. Fully optional |
 | **Live agent trace + chat history** | Watch each agent's status live as it runs; every conversation gets its own URL (`/chat/{id}`) and is listed under "Recents" in the sidebar, ChatGPT-style |
 | **India-primary market data** | Yahoo Finance (`.NS`/`.BO`) → BSE India for Indian tickers; Finnhub → Twelve Data → Yahoo Finance for US/global tickers |
 | **Real financial news** | Marketaux (finance-specific, real Indian + global coverage) with Finnhub as a US supplement |
@@ -24,7 +40,8 @@ alongside the chat.
 | **Risk analysis** | Beta (vs Nifty 50 for Indian tickers, S&P 500 otherwise) and annualized volatility |
 | **SEC filing RAG** | Download 10-K/10-Q filings, chunk & embed into Qdrant, query with cited answers *(currently limited to a small ticker set — see [docs/PRD.md](docs/PRD.md))* |
 | **Investment memo generation** | Institutional-grade PDF & Markdown research reports via the original per-ticker `/agents/run` flow |
-| **Portfolio, Watchlist, Alerts, Backtest** | Holdings ledger with gain/loss & risk gauges, symbol watchlists, rules-based alerts (RSI/sentiment/price), and strategy backtesting vs benchmark |
+| **Portfolio** | Holdings ledger with gain/loss & risk gauges, Groww import, and per-holding beta/volatility — feeds the agents' portfolio context |
+| **Parked (future release)** | Watchlist, rules-based alerts (RSI/sentiment/price), and strategy backtesting — code is retained but unmounted |
 | **Light / dark mode** | Full theme system (not just a class toggle) — switch from any page header, persists across reloads |
 | **Collapsible navigation** | Sidebar collapses to an icon rail and expands on hover, so it never eats into the chat/content area |
 | **Observability** | Prometheus metrics at `/metrics`, structured JSON logs, optional Grafana dashboards |
@@ -221,17 +238,25 @@ Groww AI/
 │   ├── .venv/                     # Backend-scoped virtualenv
 │   ├── app/
 │   │   ├── agents/
-│   │   │   ├── graph.py          # Two graphs: create_chat_graph() (free-form) + create_agent_graph() (per-ticker)
-│   │   │   ├── state.py          # Shared AgentState
+│   │   │   ├── graph.py          # Two graphs: create_chat_graph() (master-slave) + create_agent_graph() (legacy per-ticker)
+│   │   │   ├── llm.py            # ChatOpenAI (LiteLLM) factory for tool-calling agents
+│   │   │   ├── specialists.py    # Agent definitions: master_supervisor + 4 specialist create_react_agents
+│   │   │   ├── chat_nodes.py     # Master-slave chat-graph nodes (supervisor + specialist wrappers) + SSE events
+│   │   │   ├── state.py          # Shared AgentState (adds tickers/selected_agents/portfolio_context/findings)
 │   │   │   ├── utils.py          # Redis-backed log_agent_activity / emit_chat_event
-│   │   │   ├── verdict.py        # Shared helper: each specialist agent forms its own independent LLM verdict
-│   │   │   └── nodes/
-│   │   │       ├── router.py       # Chat graph entry: classifies query -> tickers/market/intent
-│   │   │       ├── research.py     # Fundamentals agent
-│   │   │       ├── technical.py    # Technical analysis agent
-│   │   │       ├── news.py         # News/sentiment agent
-│   │   │       ├── risk.py         # Risk agent (Nifty 50 / S&P 500 beta)
-│   │   │       ├── synthesis.py    # Chat graph exit: weighs all agent verdicts, streams the final answer
+│   │   │   ├── tools/            # APIs as LangChain @tools, grouped per specialist (the extension point)
+│   │   │   │   ├── market_tools.py     # get_stock_quote, get_company_profile
+│   │   │   │   ├── technical_tools.py  # get_technical_analysis
+│   │   │   │   ├── sentiment_tools.py  # get_news_sentiment
+│   │   │   │   ├── risk_tools.py       # get_risk_metrics, search_sec_filings
+│   │   │   │   └── portfolio_tools.py  # get_user_portfolio (master context)
+│   │   │   ├── verdict.py        # Legacy helper used by the per-ticker graph nodes
+│   │   │   └── nodes/            # Legacy per-ticker (create_agent_graph) nodes + chat synthesis node
+│   │   │       ├── research.py     # (legacy) Fundamentals node
+│   │   │       ├── technical.py    # (legacy) Technical node
+│   │   │       ├── news.py         # (legacy) News/sentiment node
+│   │   │       ├── risk.py         # (legacy) Risk node (Nifty 50 / S&P 500 beta)
+│   │   │       ├── synthesis.py    # Chat graph exit: weighs specialist verdicts + portfolio, streams the answer
 │   │   │       └── decision.py     # Per-ticker graph exit: full memo + PDF/DB report
 │   │   ├── api/v1/endpoints/     # chat, stocks, indicators, sentiment, sec, agents, reports,
 │   │   │                         # portfolio, watchlist, alerts, backtest
@@ -284,9 +309,11 @@ Groww AI/
 | `GET` | `/api/v1/indicators/ta?symbol=` | Technical analysis score |
 | `GET` | `/api/v1/sentiment/summary?symbol=` | News sentiment summary |
 | `POST` | `/api/v1/sec/{symbol}/index` | Index SEC filings into Qdrant |
-| `POST` | `/api/v1/agents/run` | Launch the original per-ticker deep-dive workflow |
+| `GET` | `/api/v1/portfolios/summary?session_id=` | Portfolio value, gain/loss, and per-holding risk |
+| `POST` | `/api/v1/portfolios/import/groww?session_id=` | Import holdings via a Groww Trade API access token |
+| `POST` | `/api/v1/portfolios/import/file?session_id=` | Import holdings from an uploaded Groww CSV/Excel export |
+| `POST` | `/api/v1/agents/run` | Launch the original per-ticker deep-dive workflow (legacy memo flow) |
 | `GET` | `/api/v1/reports/{id}/download/pdf` | Download PDF investment memo |
-| `POST` | `/api/v1/backtest` | Run a backtesting simulation |
 | `GET` | `/api/v1/health` | Deep health check (Postgres + Redis + Qdrant) |
 | `GET` | `/metrics` | Prometheus metrics |
 

@@ -102,6 +102,44 @@ export async function fetchPortfolioSummary(sessionId: string): Promise<any> {
   return res.json();
 }
 
+async function parseError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    return body?.detail || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function importGrowwPortfolio(
+  sessionId: string,
+  accessToken: string,
+  replace: boolean = true
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/import/groww?session_id=${sessionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ access_token: accessToken, replace }),
+  });
+  if (!res.ok) throw new Error(await parseError(res, `Groww import failed: ${res.statusText}`));
+  return res.json();
+}
+
+export async function importPortfolioFile(
+  sessionId: string,
+  file: File,
+  replace: boolean = true
+): Promise<any> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/portfolios/import/file?session_id=${sessionId}&replace=${replace}`,
+    { method: 'POST', body: form }
+  );
+  if (!res.ok) throw new Error(await parseError(res, `File import failed: ${res.statusText}`));
+  return res.json();
+}
+
 export async function fetchWatchlist(sessionId: string): Promise<any[]> {
   const res = await fetch(`${API_BASE_URL}/api/v1/watchlist?session_id=${sessionId}`);
   if (!res.ok) throw new Error(`Failed to fetch watchlist: ${res.statusText}`);

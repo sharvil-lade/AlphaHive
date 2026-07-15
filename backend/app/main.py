@@ -52,9 +52,13 @@ from app.api.v1.endpoints.sec import router as sec_router
 from app.api.v1.endpoints.agents import router as agents_router
 from app.api.v1.endpoints.reports import router as reports_router
 from app.api.v1.endpoints.portfolio import router as portfolio_router
-from app.api.v1.endpoints.watchlist import router as watchlist_router
-from app.api.v1.endpoints.alerts import router as alerts_router
-from app.api.v1.endpoints.backtest import router as backtest_router
+# Watchlist, Alerts, and Backtest are parked for a future release — the endpoint
+# modules are kept in the tree but not mounted, so the active app is just
+# chat + portfolio. Re-enable by restoring these imports and the include_router
+# calls below.
+# from app.api.v1.endpoints.watchlist import router as watchlist_router
+# from app.api.v1.endpoints.alerts import router as alerts_router
+# from app.api.v1.endpoints.backtest import router as backtest_router
 from app.api.v1.endpoints.chat import router as chat_router
 from fastapi.responses import PlainTextResponse
 from app.core.rate_limiter import limit_60_per_min, limit_10_per_min
@@ -83,9 +87,10 @@ app.include_router(sec_router,       prefix=f"{settings.API_V1_STR}/sec",       
 app.include_router(agents_router,    prefix=f"{settings.API_V1_STR}/agents",     tags=["agents"],     dependencies=[Depends(limit_10_per_min)])
 app.include_router(reports_router,   prefix=f"{settings.API_V1_STR}/reports",    tags=["reports"],    dependencies=[Depends(limit_60_per_min)])
 app.include_router(portfolio_router, prefix=f"{settings.API_V1_STR}/portfolios", tags=["portfolios"], dependencies=[Depends(limit_60_per_min)])
-app.include_router(watchlist_router, prefix=f"{settings.API_V1_STR}/watchlist",  tags=["watchlist"],  dependencies=[Depends(limit_60_per_min)])
-app.include_router(alerts_router,    prefix=f"{settings.API_V1_STR}/alerts",     tags=["alerts"],     dependencies=[Depends(limit_60_per_min)])
-app.include_router(backtest_router,  prefix=f"{settings.API_V1_STR}/backtest",   tags=["backtest"],   dependencies=[Depends(limit_60_per_min)])
+# Parked for a future release (see import block above):
+# app.include_router(watchlist_router, prefix=f"{settings.API_V1_STR}/watchlist",  tags=["watchlist"],  dependencies=[Depends(limit_60_per_min)])
+# app.include_router(alerts_router,    prefix=f"{settings.API_V1_STR}/alerts",     tags=["alerts"],     dependencies=[Depends(limit_60_per_min)])
+# app.include_router(backtest_router,  prefix=f"{settings.API_V1_STR}/backtest",   tags=["backtest"],   dependencies=[Depends(limit_60_per_min)])
 app.include_router(chat_router,      prefix=f"{settings.API_V1_STR}/chat",       tags=["chat"],       dependencies=[Depends(limit_10_per_min)])
 
 
