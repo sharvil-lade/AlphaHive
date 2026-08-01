@@ -18,6 +18,9 @@ class VectorStoreService:
         self.qdrant_host = settings.QDRANT_HOST
         self.qdrant_port = settings.QDRANT_PORT
         self._client: Optional[QdrantClient] = None
+        # Latches to True after the first embedding failure so we fall back to the mock
+        # silently instead of spamming 401s on every chunk/query.
+        self._embeddings_disabled = False
 
     def get_client(self) -> QdrantClient:
         """Lazily initialize Qdrant client connection."""
@@ -26,18 +29,31 @@ class VectorStoreService:
         return self._client
 
     def _generate_embedding(self, text: str) -> List[float]:
-        """Generate a 1536-dimensional embedding via the LiteLLM proxy, or a deterministic lexical mock fallback."""
-        if settings.LITELLM_BASE_URL and settings.LITELLM_API_KEY:
+        """Generate a 1536-dimensional embedding via the LiteLLM proxy, or a deterministic
+        lexical mock fallback. Real embeddings are only attempted when EMBEDDING_MODEL is
+        configured and reachable; on the first failure we latch to the mock so we don't
+        spam the proxy with 401s on every chunk."""
+        if (
+            not self._embeddings_disabled
+            and settings.EMBEDDING_MODEL
+            and settings.LITELLM_BASE_URL
+            and settings.LITELLM_API_KEY
+        ):
             try:
-                # Synchronous-like fetch using LangChain OpenAIEmbeddings, pointed at the LiteLLM proxy
                 from langchain_openai import OpenAIEmbeddings
+
                 embeddings_model = OpenAIEmbeddings(
+                    model=settings.EMBEDDING_MODEL,
                     openai_api_key=settings.LITELLM_API_KEY,
                     openai_api_base=settings.LITELLM_BASE_URL,
                 )
                 return embeddings_model.embed_query(text)
             except Exception as e:
-                logger.error(f"LiteLLM embedding generation failed: {e}. Falling back to mock.")
+                logger.warning(
+                    f"Embedding model '{settings.EMBEDDING_MODEL}' unavailable ({e}); "
+                    "using deterministic mock embeddings for the rest of this run."
+                )
+                self._embeddings_disabled = True
 
         return self._generate_mock_embedding(text)
 

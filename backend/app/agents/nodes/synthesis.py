@@ -16,25 +16,41 @@ def _build_analysis_prompt(state: AgentState) -> str:
     findings = state.get("findings") or []
     portfolio_context = state.get("portfolio_context") or "The user's portfolio is empty."
 
+    ok_findings = [f for f in findings if f.get("ok", True)]
+    failed = [f.get("label", f.get("agent", "Agent")) for f in findings if not f.get("ok", True)]
+
     findings_block = "\n\n".join(
         f"**{f.get('label', f.get('agent', 'Agent'))} Agent:**\n{f.get('verdict', 'no verdict')}"
-        for f in findings
-    ) or "No specialist verdicts were produced."
+        for f in ok_findings
+    ) or "No specialist verdicts were produced (their data sources were unavailable)."
+
+    gap_note = (
+        f"\n\nNote: the {', '.join(failed)} agent(s) could not complete (data unavailable). "
+        "Acknowledge this data gap honestly in your answer and lower your confidence "
+        "accordingly rather than pretending you had full coverage."
+        if failed
+        else ""
+    )
+
+    subject = f"analysed {ticker}" if ticker else "reviewed the user's portfolio"
 
     return (
         "You are the lead analyst on a stock research team. Your specialist agents each "
-        f"independently analysed {ticker} and reported their verdicts below. The user asked:\n"
+        f"independently {subject} and reported below. The user asked:\n"
         f'"{state["query"]}"\n\n'
         f"--- The user's current portfolio (use this to make the advice personal) ---\n"
         f"{portfolio_context}\n\n"
-        f"--- Specialist agent verdicts ---\n{findings_block}\n\n"
-        "Weigh these independent verdicts against each other — note explicitly where they "
-        "agree or disagree — and, where relevant, relate the answer to the user's actual "
-        "holdings (concentration, overlap with what they own, position sizing). Write a "
-        "clear, well-structured markdown response answering the user's question directly. "
-        "Include a brief summary verdict (Buy/Hold/Sell-leaning) with confidence, then "
-        "supporting detail. Professional but conversational — a few short sections, not a "
-        "wall of boilerplate."
+        f"--- Specialist agent findings ---\n{findings_block}{gap_note}\n\n"
+        "Weigh these independent findings against each other. One of them is the Bear "
+        "(red-team) agent arguing the counter-case — take it seriously: explicitly weigh "
+        "the bull case (the other analysts) against the Bear's case and note where the "
+        "team agrees or disagrees, rather than glossing over the disagreement. Relate the "
+        "answer to the user's actual holdings (concentration, overlap with what they own, "
+        "position sizing). Write a clear, well-structured markdown response answering the "
+        "user's question directly. Where a buy/hold/sell stance is relevant, give a brief "
+        "summary verdict with confidence AND a short 'Bull vs Bear' contrast; for a "
+        "portfolio review, lead with the diagnosis and concrete next actions. Professional "
+        "but conversational — a few short sections, not a wall of boilerplate."
     )
 
 
@@ -59,15 +75,16 @@ def _local_fallback_markdown(state: AgentState) -> str:
     """Deterministic fallback if no LLM is reachable."""
     ticker = state.get("ticker") or ""
     findings = state.get("findings") or []
-    if not ticker or not findings:
+    if not findings:
         return (
             "I can share general market information, but I don't have a live LLM connection "
             "configured right now to answer open-ended questions in depth. Ask me about a "
             'specific stock (e.g. "Should I buy Reliance?") for a data-driven analysis.'
         )
+    heading = f"{ticker} — Specialist Read" if ticker else "Portfolio Review"
     bullets = "\n".join(f"- **{f.get('label')}**: {f.get('verdict', '')[:200]}" for f in findings)
     return (
-        f"## {ticker} — Specialist Read (No-LLM Fallback)\n\n{bullets}\n\n"
+        f"## {heading} (No-LLM Fallback)\n\n{bullets}\n\n"
         "_No LLM was reachable for a full narrative synthesis — this is the raw specialist output._"
     )
 
@@ -84,23 +101,27 @@ async def synthesis_node(state: AgentState) -> Dict[str, Any]:
 
     ticker = state.get("ticker") or ""
     needs_agents = state.get("needs_agents", False)
+    portfolio_review = state.get("portfolio_review", False)
     has_findings = bool(state.get("findings"))
 
     full_content = ""
     source = "local_fallback"
 
     if llm_client.is_configured:
-        use_analysis = ticker and needs_agents and has_findings
+        use_analysis = has_findings and ((ticker and needs_agents) or portfolio_review)
         prompt = _build_analysis_prompt(state) if use_analysis else _build_general_prompt(state)
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are AlphaHive, a stock market research assistant. Format responses in GitHub-"
-                    "flavored markdown. When showing a formula or calculation (e.g. P/E ratio, CAGR, "
-                    "beta), write it as LaTeX using $$...$$ for a standalone equation or $...$ for an "
-                    "inline one — never as plain-text fractions or ASCII math. Use markdown tables for "
-                    "side-by-side comparisons and fenced code blocks for structured/tabular data."
+                    "You are AlphaHive, a stock market research assistant — an educational research "
+                    "tool, NOT a SEBI-registered investment adviser. Frame conclusions as research and "
+                    "reasoning the user should verify, not as personalised financial advice or a "
+                    "guarantee; never promise returns. Format responses in GitHub-flavored markdown. "
+                    "When showing a formula or calculation (e.g. P/E ratio, CAGR, beta), write it as "
+                    "LaTeX using $$...$$ for a standalone equation or $...$ for an inline one — never as "
+                    "plain-text fractions or ASCII math. Use markdown tables for side-by-side "
+                    "comparisons and fenced code blocks for structured/tabular data."
                 ),
             },
             {"role": "user", "content": prompt},

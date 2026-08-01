@@ -83,6 +83,7 @@ async def execute_chat_workflow(assistant_message_id: UUID, session_id: str, que
             "needs_agents": False,
             "tickers": [],
             "selected_agents": [],
+            "portfolio_review": False,
             "portfolio_context": portfolio_context,
             "findings": [],
         }

@@ -32,5 +32,6 @@ class AgentState(TypedDict):
     # Master/slave chat-graph fields (new agentic architecture):
     tickers: List[str]                # all tickers the master planned to analyse
     selected_agents: List[str]        # which specialist slaves the master dispatched
+    portfolio_review: bool            # master decided the question is about the user's whole portfolio
     portfolio_context: str            # compact summary of the user's holdings, injected as agent context
     findings: Annotated[List[Dict[str, Any]], append_logs]  # each slave's verdict, appended in parallel

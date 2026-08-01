@@ -62,7 +62,8 @@ export function ChatInput({
           </button>
         </div>
         <p className="text-[11px] text-mutedText text-center mt-2">
-          AlphaHive can make mistakes. Not financial advice — verify before making investment decisions.
+          AlphaHive is an AI research assistant, not a SEBI-registered investment adviser. Its output
+          is for information only — not investment advice. Verify independently before you invest.
         </p>
       </div>
     </div>

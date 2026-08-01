@@ -10,9 +10,9 @@ import { ThemeToggle } from "../layout/ThemeToggle";
 
 const SUGGESTIONS = [
   "Should I buy Reliance right now?",
+  "Analyze my portfolio",
   "What's the technical outlook for TCS?",
-  "Is Apple a good long-term hold?",
-  "What is a P/E ratio?",
+  "Am I too concentrated in any sector?",
 ];
 
 export function ChatView() {
@@ -64,7 +64,8 @@ export function ChatView() {
               <h1 className="text-xl font-semibold mb-1.5">What stock are you researching?</h1>
               <p className="text-sm text-mutedText mb-6 max-w-md">
                 Ask about any Indian or global stock — I'll run fundamentals, technical, sentiment, and
-                risk analysis, then give you a straight answer.
+                risk analysis, then give you a straight answer. Add your portfolio and I'll factor in
+                what you already own.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
                 {SUGGESTIONS.map((s) => (

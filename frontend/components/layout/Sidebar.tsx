@@ -40,8 +40,8 @@ export function Sidebar() {
         )}
       >
         <div className="h-14 shrink-0 flex items-center gap-2 px-5 border-b border-surface-border">
-          {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> avoids next/image's SVG optimizer restrictions */}
-          <img src="/icon.svg" alt="AlphaHive" width={24} height={24} className="w-6 h-6 shrink-0 rounded-md" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> keeps the brand PNG un-optimized/crisp */}
+          <img src="/logo.png" alt="Alpha Hive" width={24} height={24} className="w-6 h-6 shrink-0 rounded-md" />
           <span className="text-sm font-semibold tracking-tight whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150">
             AlphaHive
           </span>

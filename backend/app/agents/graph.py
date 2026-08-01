@@ -12,6 +12,8 @@ from app.agents.chat_nodes import (
     technical_node as chat_technical_node,
     sentiment_node as chat_sentiment_node,
     risk_node as chat_risk_node,
+    bear_node,
+    portfolio_doctor_node,
 )
 from app.agents.utils import log_agent_activity
 
@@ -63,20 +65,30 @@ def create_agent_graph():
 agent_graph = create_agent_graph()
 
 
-# Node names for the chat graph's specialist slaves. These MUST match both the
-# supervisor plan's `selected_agents` keys and the SSE `node` names the frontend
-# AgentTracePanel renders.
-_CHAT_SPECIALIST_NODES = ["fundamentals", "technical", "news_sentiment", "risk"]
+# Per-stock analyst slaves the supervisor selects from (must match the plan's
+# `selected_agents` keys and the SSE `node` names the frontend renders).
+_PER_STOCK_ANALYSTS = ["fundamentals", "technical", "news_sentiment", "risk"]
+# Every specialist node registered in the graph (analysts + auto-dispatched bear +
+# portfolio doctor). All feed into synthesis.
+_ALL_SPECIALIST_NODES = [*_PER_STOCK_ANALYSTS, "bear", "portfolio_doctor"]
 
 
 def _route_after_supervisor(state: AgentState):
-    """Master delegation: fan out only to the specialist slaves the supervisor
-    selected. If it decided no research is needed (general question / no ticker),
-    short-circuit straight to synthesis."""
-    selected = state.get("selected_agents") or []
-    if state.get("needs_agents") and selected:
-        return [n for n in selected if n in _CHAT_SPECIALIST_NODES] or ["synthesis"]
-    return ["synthesis"]
+    """Master delegation: fan out to the per-stock analysts the supervisor selected
+    (always adding the Bear red-team to challenge them), plus the Portfolio Doctor if
+    it flagged a portfolio review. If nothing is needed, short-circuit to synthesis."""
+    targets = []
+    if state.get("needs_agents") and state.get("selected_agents"):
+        targets += [n for n in state["selected_agents"] if n in _PER_STOCK_ANALYSTS]
+        if targets:
+            targets.append("bear")  # always red-team a genuine stock analysis
+    # Only dispatch the Portfolio Doctor if the user actually has holdings — otherwise
+    # it's a wasted call that can only report "your portfolio is empty".
+    ctx = (state.get("portfolio_context") or "").lower()
+    has_holdings = "empty" not in ctx and "no holdings" not in ctx and "could not be loaded" not in ctx
+    if state.get("portfolio_review") and has_holdings:
+        targets.append("portfolio_doctor")
+    return targets or ["synthesis"]
 
 
 def create_chat_graph():
@@ -100,6 +112,8 @@ def create_chat_graph():
     workflow.add_node("technical", chat_technical_node)
     workflow.add_node("news_sentiment", chat_sentiment_node)
     workflow.add_node("risk", chat_risk_node)
+    workflow.add_node("bear", bear_node)
+    workflow.add_node("portfolio_doctor", portfolio_doctor_node)
     workflow.add_node("synthesis", synthesis_node)
 
     workflow.set_entry_point("supervisor")
@@ -107,10 +121,10 @@ def create_chat_graph():
     workflow.add_conditional_edges(
         "supervisor",
         _route_after_supervisor,
-        [*_CHAT_SPECIALIST_NODES, "synthesis"],
+        [*_ALL_SPECIALIST_NODES, "synthesis"],
     )
 
-    for node in _CHAT_SPECIALIST_NODES:
+    for node in _ALL_SPECIALIST_NODES:
         workflow.add_edge(node, "synthesis")
     workflow.add_edge("synthesis", END)
 

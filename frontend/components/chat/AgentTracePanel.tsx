@@ -13,6 +13,8 @@ const PIPELINE = [
   { key: "technical", label: "Technical" },
   { key: "news_sentiment", label: "News & Sentiment" },
   { key: "risk", label: "Risk" },
+  { key: "bear", label: "Bear Case" },
+  { key: "portfolio_doctor", label: "Portfolio Doctor" },
   { key: "synthesis", label: "Synthesizing" },
 ];
 

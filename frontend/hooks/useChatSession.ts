@@ -12,12 +12,21 @@ import {
 export type AgentStatus = "running" | "completed" | "failed";
 export type MessageStatus = "pending" | "running" | "completed" | "failed";
 
+export interface AgentVerdict {
+  node: string;
+  label: string;
+  rating?: string | null;
+  confidence?: number | null;
+  rationale: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   status: MessageStatus;
   traces: Record<string, AgentStatus>;
+  verdicts: Record<string, AgentVerdict>;
 }
 
 export interface ConversationSummary {
@@ -68,8 +77,8 @@ export function useChatSession(sessionId: string) {
 
         setMessages((prev) => [
           ...prev,
-          { id: localUserId, role: "user", content: trimmed, status: "completed", traces: {} },
-          { id: localAssistantId, role: "assistant", content: "", status: "pending", traces: {} },
+          { id: localUserId, role: "user", content: trimmed, status: "completed", traces: {}, verdicts: {} },
+          { id: localAssistantId, role: "assistant", content: "", status: "pending", traces: {}, verdicts: {} },
         ]);
 
         const res = await postChatMessage(convId, trimmed);
@@ -96,6 +105,26 @@ export function useChatSession(sessionId: string) {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId ? { ...m, traces: { ...m.traces, [data.node]: data.status } } : m
+                )
+              );
+            } else if (data.type === "agent-verdict") {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        verdicts: {
+                          ...m.verdicts,
+                          [data.node]: {
+                            node: data.node,
+                            label: data.label,
+                            rating: data.rating,
+                            confidence: data.confidence,
+                            rationale: data.rationale,
+                          },
+                        },
+                      }
+                    : m
                 )
               );
             } else if (data.type === "text-delta") {
@@ -142,6 +171,8 @@ export function useChatSession(sessionId: string) {
         content: m.content,
         status: m.status,
         traces: Object.fromEntries((m.traces || []).map((t: any) => [t.node, t.status])),
+        // Per-agent verdicts stream live and aren't persisted, so they're empty on reload.
+        verdicts: {},
       }))
     );
   }, []);

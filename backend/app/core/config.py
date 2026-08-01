@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # Stronger model reserved for the final synthesis/decision step, which reads every
     # specialist agent's output and writes the actual investment recommendation.
     LLM_MODEL_SYNTHESIS: str = "anthropic/claude-sonnet-4-6"
+    # Embedding model for SEC-filing RAG. Leave empty to disable real embeddings and use
+    # the deterministic lexical mock (many LiteLLM keys have no embedding-model access —
+    # attempting one just yields repeated 401s). Set to a model your key can reach to
+    # enable true semantic SEC search, e.g. "openai/text-embedding-3-small".
+    EMBEDDING_MODEL: Optional[str] = None
 
     # Market data API Keys
     FINNHUB_API_KEY: Optional[str] = None

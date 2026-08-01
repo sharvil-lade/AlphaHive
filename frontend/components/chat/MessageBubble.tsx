@@ -8,6 +8,7 @@ import "katex/dist/katex.min.css";
 import { Loader2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { AgentTracePanel } from "./AgentTracePanel";
+import { AgentVerdicts } from "./AgentVerdicts";
 import type { ChatMessage } from "../../hooks/useChatSession";
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
@@ -29,6 +30,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
     <div className="flex justify-start mb-6">
       <div className="max-w-[85%] w-full">
         <AgentTracePanel traces={message.traces} />
+        <AgentVerdicts verdicts={message.verdicts} />
 
         {isThinking ? (
           <div className="flex items-center gap-2 text-mutedText text-sm py-1">

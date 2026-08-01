@@ -31,10 +31,12 @@ from pydantic import BaseModel, Field
 from app.agents.llm import get_chat_model
 from app.agents.tools import (
     FUNDAMENTALS_TOOLS,
-    PORTFOLIO_TOOLS,
     RISK_TOOLS,
     SENTIMENT_TOOLS,
     TECHNICAL_TOOLS,
+    get_risk_metrics,
+    get_stock_quote,
+    get_user_portfolio,
 )
 from app.core.config import settings
 
@@ -45,6 +47,14 @@ TECHNICAL = "technical"
 NEWS_SENTIMENT = "news_sentiment"
 RISK = "risk"
 SPECIALIST_KEYS = [FUNDAMENTALS, TECHNICAL, NEWS_SENTIMENT, RISK]
+
+# Portfolio Doctor is a portfolio-level specialist (no single ticker) — routed via
+# the plan's `portfolio_review` flag rather than the per-ticker `selected_agents`.
+PORTFOLIO_DOCTOR = "portfolio_doctor"
+
+# The Bear/Red-Team agent is NOT selectable by the supervisor — it is auto-dispatched
+# on every per-stock analysis to argue the opposite case and counter confirmation bias.
+BEAR = "bear"
 
 
 # ────────────────────────────── Master plan schema ──────────────────────────────
@@ -70,9 +80,19 @@ class SupervisorPlan(BaseModel):
     selected_agents: List[str] = Field(
         default_factory=list,
         description=(
-            "Which specialist agents to dispatch, any subset of: "
+            "Which per-stock specialist agents to dispatch, any subset of: "
             '"fundamentals", "technical", "news_sentiment", "risk". '
             "Empty if needs_research is false."
+        ),
+    )
+    portfolio_review: bool = Field(
+        default=False,
+        description=(
+            "True if the question is about the user's OWN overall portfolio/holdings "
+            "(e.g. 'analyse my portfolio', 'am I too concentrated?', 'how risky is my "
+            "portfolio?', 'should I rebalance?', 'does adding X fit my portfolio?'). "
+            "This dispatches the Portfolio Doctor agent. Can be true alongside per-stock "
+            "agents when the user asks how a specific stock fits their portfolio."
         ),
     )
     reasoning: str = Field(
@@ -115,16 +135,48 @@ _RISK_PROMPT = (
     "RATIONALE: <1-2 sentences on beta, volatility, and disclosed risks>."
 )
 
+_BEAR_PROMPT = (
+    "You are the Bear — a deliberately skeptical red-team analyst on a stock research "
+    "team. Your job is to build the strongest possible case AGAINST buying the ticker "
+    "you are given, so the team doesn't fall for confirmation bias. Use your tools "
+    "(quote, technicals, news sentiment, risk metrics, SEC filings) to find real red "
+    "flags: stretched valuation, deteriorating technicals, negative catalysts, high "
+    "beta/volatility, disclosed risks, or crowded/hyped positioning. Be intellectually "
+    "honest — do not fabricate; if the bear case is genuinely weak, say so. Respond with "
+    "a short verdict in this exact form:\n"
+    "RATING: STRONG_BEAR | MILD_BEAR | BEAR_CASE_WEAK\nCONFIDENCE: <0-100>\n"
+    "RATIONALE: <1-3 sentences with the most important concrete red flags you found>."
+)
+
+_PORTFOLIO_DOCTOR_PROMPT = (
+    "You are a portfolio doctor — a specialist who diagnoses a retail investor's whole "
+    "portfolio. Call get_user_portfolio with the session_id you are given to load their "
+    "live holdings, value, sector weights, gain/loss, and portfolio beta. You may call "
+    "get_stock_quote or get_risk_metrics on individual holdings if you need more detail. "
+    "Then diagnose:\n"
+    "- Concentration: any single holding or sector that is an outsized share of the portfolio\n"
+    "- Diversification: sector/asset spread and notable gaps or overlaps\n"
+    "- Risk: portfolio beta and volatility vs the market; which holdings drive the risk\n"
+    "- Performance: overall and standout winners/losers\n"
+    "Respond with a concise diagnosis followed by 2-4 concrete, actionable suggestions "
+    "(e.g. trim an over-weight position, add diversification in a missing sector). Be "
+    "specific and reference the actual holdings and numbers. If the portfolio is empty, "
+    "say so and suggest the user add or import their holdings first."
+)
+
 _SUPERVISOR_PROMPT = (
     "You are the master supervisor of a stock research team. Read the user's question "
-    "and the summary of their portfolio provided in the conversation. If the question "
-    "is about specific stock(s) and would benefit from research, plan which specialist "
-    "agents to dispatch. You may call the get_user_portfolio tool if you need the "
-    "user's live holdings to decide (e.g. 'should I rebalance my portfolio?'). "
-    "Available specialists: fundamentals, technical, news_sentiment, risk. "
-    "Prefer dispatching all four for a genuine buy/sell/hold decision on a single "
-    "stock. For a pure definition, greeting, or broad market question, set "
-    "needs_research to false and leave tickers/agents empty."
+    "and the summary of their portfolio provided in the conversation. Plan the work:\n"
+    "- If the question is about specific stock(s), set needs_research and pick which "
+    "per-stock specialists to dispatch (fundamentals, technical, news_sentiment, risk). "
+    "Prefer all four for a genuine buy/sell/hold decision on a single stock.\n"
+    "- If the question is about the user's OWN overall portfolio (concentration, risk, "
+    "diversification, rebalancing, or whether a stock fits their holdings), set "
+    "portfolio_review to true to dispatch the Portfolio Doctor. Both can be true at "
+    "once (e.g. 'should I add more Reliance to my portfolio?').\n"
+    "- For a pure definition, greeting, or broad market question, set needs_research "
+    "and portfolio_review to false and leave tickers/agents empty.\n"
+    "You may call the get_user_portfolio tool if you need the user's live holdings to decide."
 )
 
 
@@ -159,21 +211,50 @@ def risk_agent():
 
 
 @lru_cache(maxsize=1)
-def master_supervisor():
-    """The master agent: portfolio-aware planner returning a structured SupervisorPlan."""
+def bear_agent():
+    """Red-team specialist: argues the bearish case for a ticker using the full research
+    toolset. Auto-dispatched on every stock analysis (not supervisor-selectable)."""
+    tools = [*FUNDAMENTALS_TOOLS, *TECHNICAL_TOOLS, *SENTIMENT_TOOLS, *RISK_TOOLS]
+    return create_react_agent(get_chat_model(), tools, prompt=_BEAR_PROMPT, name="bear_agent")
+
+
+@lru_cache(maxsize=1)
+def portfolio_doctor_agent():
+    """Portfolio-level specialist: diagnoses the user's whole portfolio. Runs on the
+    stronger synthesis model since it reasons across many holdings at once."""
     return create_react_agent(
         get_chat_model(settings.LLM_MODEL_SYNTHESIS),
-        PORTFOLIO_TOOLS,
-        prompt=_SUPERVISOR_PROMPT,
-        response_format=SupervisorPlan,
-        name="master_supervisor",
+        [get_user_portfolio, get_stock_quote, get_risk_metrics],
+        prompt=_PORTFOLIO_DOCTOR_PROMPT,
+        name="portfolio_doctor_agent",
+    )
+
+
+@lru_cache(maxsize=1)
+def master_supervisor():
+    """The master planner: returns a SupervisorPlan directly via structured output.
+
+    Deliberately NOT a create_react_agent: that prebuilt's internal
+    `generate_structured_response` step issues a schema-as-tool call without a
+    `tools=` param, which some LiteLLM/Anthropic setups reject (400
+    UnsupportedParamsError). A direct `with_structured_output` call is the reliable
+    path (verified against the live proxy). Planning is a lightweight classification,
+    so it runs on the fast primary model, and the user's portfolio is already injected
+    into the prompt — no live tool call is needed here.
+
+    Returns a Runnable: `.ainvoke(messages)` -> SupervisorPlan.
+    """
+    return get_chat_model(settings.LLM_MODEL_PRIMARY, temperature=0.0).with_structured_output(
+        SupervisorPlan
     )
 
 
 # Maps a specialist key -> its agent factory, so the graph can dispatch by name.
+# Includes `bear` (auto-dispatched red-team) even though it isn't in SPECIALIST_KEYS.
 SPECIALIST_AGENTS = {
     FUNDAMENTALS: fundamentals_agent,
     TECHNICAL: technical_agent,
     NEWS_SENTIMENT: sentiment_agent,
     RISK: risk_agent,
+    BEAR: bear_agent,
 }

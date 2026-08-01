@@ -12,12 +12,16 @@ Flow:
 
 import asyncio
 import logging
+import re
 from typing import Any, Dict
 
 from app.agents.specialists import (
+    PORTFOLIO_DOCTOR,
     SPECIALIST_AGENTS,
     SPECIALIST_KEYS,
+    _SUPERVISOR_PROMPT,
     master_supervisor,
+    portfolio_doctor_agent,
 )
 from app.agents.llm import is_agent_llm_configured
 from app.agents.state import AgentState
@@ -34,7 +38,29 @@ _LABELS = {
     "technical": "Technical",
     "news_sentiment": "News & Sentiment",
     "risk": "Risk",
+    "bear": "Bear Case",
+    "portfolio_doctor": "Portfolio Doctor",
 }
+
+
+_RATING_RE = re.compile(r"RATING:\s*([A-Za-z_ ]+)", re.IGNORECASE)
+_CONFIDENCE_RE = re.compile(r"CONFIDENCE:\s*(\d+)", re.IGNORECASE)
+_RATIONALE_RE = re.compile(r"RATIONALE:\s*(.+)", re.IGNORECASE | re.DOTALL)
+
+
+def _parse_verdict(text: str) -> Dict[str, Any]:
+    """Pull a structured {rating, confidence, rationale} out of a specialist's verdict
+    text for display in the UI. Free-prose verdicts (e.g. Portfolio Doctor) fall back
+    to a short excerpt as the rationale."""
+    rating_m = _RATING_RE.search(text or "")
+    conf_m = _CONFIDENCE_RE.search(text or "")
+    rat_m = _RATIONALE_RE.search(text or "")
+    rationale = (rat_m.group(1) if rat_m else text or "").strip()
+    return {
+        "rating": rating_m.group(1).strip().upper() if rating_m else None,
+        "confidence": int(conf_m.group(1)) if conf_m else None,
+        "rationale": rationale[:400],
+    }
 
 
 def _last_message_text(result: Dict[str, Any]) -> str:
@@ -64,30 +90,34 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
     selected_agents: list[str] = []
     market = "IN"
     needs_agents = False
+    portfolio_review = False
 
     if is_agent_llm_configured():
         try:
-            prompt = (
+            user_prompt = (
                 f"User question: \"{query}\"\n\n"
                 f"User's portfolio summary:\n{portfolio_context}\n\n"
-                f"The user's session_id is \"{state.get('session_id', '')}\" — pass it to the "
-                "get_user_portfolio tool if you need live holdings.\n"
                 "Now produce your plan."
             )
-            result = await asyncio.wait_for(
-                master_supervisor().ainvoke({"messages": [{"role": "user", "content": prompt}]}),
+            plan = await asyncio.wait_for(
+                master_supervisor().ainvoke(
+                    [
+                        {"role": "system", "content": _SUPERVISOR_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ]
+                ),
                 timeout=_AGENT_TIMEOUT,
             )
-            plan = result.get("structured_response")
             if plan is not None:
                 needs_agents = bool(plan.needs_research)
                 tickers = [t.upper().strip() for t in (plan.tickers or []) if t]
                 market = plan.market or "IN"
                 selected_agents = [a for a in (plan.selected_agents or []) if a in SPECIALIST_KEYS]
+                portfolio_review = bool(getattr(plan, "portfolio_review", False))
                 # A genuine analysis with no explicit agent list -> run the full team.
                 if needs_agents and tickers and not selected_agents:
                     selected_agents = list(SPECIALIST_KEYS)
-                # Can't research without a ticker.
+                # Can't research a specific stock without a ticker (portfolio review is separate).
                 if not tickers:
                     needs_agents = False
                     selected_agents = []
@@ -101,7 +131,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
         message_id,
         "supervisor",
         f"Plan: tickers={tickers or 'none'}, agents={selected_agents or 'none'}, "
-        f"market={market}, needs_research={needs_agents}",
+        f"portfolio_review={portfolio_review}, market={market}, needs_research={needs_agents}",
     )
     await emit_chat_event(message_id, {"type": "agent-status", "node": "supervisor", "status": "completed"})
 
@@ -111,6 +141,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
         "market": market,
         "selected_agents": selected_agents,
         "needs_agents": needs_agents,
+        "portfolio_review": portfolio_review,
         "logs": [start_log, success_log],
     }
 
@@ -140,12 +171,18 @@ async def _run_specialist(state: AgentState, key: str) -> Dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         verdict_text = f"{label} analysis unavailable ({e})."
 
-    status = "completed" if verdict_text and "unavailable" not in verdict_text else "failed"
+    ok = bool(verdict_text) and "unavailable" not in verdict_text and "timed out" not in verdict_text
+    status = "completed" if ok else "failed"
     done_log = await log_agent_activity(message_id, key, f"{label} agent verdict: {verdict_text[:200]}")
     await emit_chat_event(message_id, {"type": "agent-status", "node": key, "status": status})
+    if ok:
+        await emit_chat_event(
+            message_id,
+            {"type": "agent-verdict", "node": key, "label": label, **_parse_verdict(verdict_text)},
+        )
 
     return {
-        "findings": [{"agent": key, "label": label, "verdict": verdict_text}],
+        "findings": [{"agent": key, "label": label, "verdict": verdict_text, "ok": ok}],
         "logs": [start_log, done_log],
     }
 
@@ -164,3 +201,50 @@ async def sentiment_node(state: AgentState) -> Dict[str, Any]:
 
 async def risk_node(state: AgentState) -> Dict[str, Any]:
     return await _run_specialist(state, "risk")
+
+
+async def bear_node(state: AgentState) -> Dict[str, Any]:
+    return await _run_specialist(state, "bear")
+
+
+async def portfolio_doctor_node(state: AgentState) -> Dict[str, Any]:
+    """Portfolio-level slave: diagnoses the user's whole portfolio. Only invoked when
+    the master set portfolio_review=true (see graph.py routing)."""
+    message_id = state["message_id"]
+    session_id = state.get("session_id", "")
+    key = PORTFOLIO_DOCTOR
+    label = _LABELS[key]
+
+    start_log = await log_agent_activity(message_id, key, "Portfolio Doctor reviewing holdings")
+    await emit_chat_event(message_id, {"type": "agent-status", "node": key, "status": "running"})
+
+    verdict_text = ""
+    try:
+        prompt = (
+            f"Diagnose this user's portfolio. Their session_id is \"{session_id}\" — call "
+            "get_user_portfolio with it to load the holdings, then give your diagnosis and suggestions."
+        )
+        result = await asyncio.wait_for(
+            portfolio_doctor_agent().ainvoke({"messages": [{"role": "user", "content": prompt}]}),
+            timeout=_AGENT_TIMEOUT,
+        )
+        verdict_text = _last_message_text(result)
+    except asyncio.TimeoutError:
+        verdict_text = f"{label} analysis timed out."
+    except Exception as e:  # noqa: BLE001
+        verdict_text = f"{label} analysis unavailable ({e})."
+
+    ok = bool(verdict_text) and "unavailable" not in verdict_text and "timed out" not in verdict_text
+    status = "completed" if ok else "failed"
+    done_log = await log_agent_activity(message_id, key, f"Portfolio Doctor: {verdict_text[:200]}")
+    await emit_chat_event(message_id, {"type": "agent-status", "node": key, "status": status})
+    if ok:
+        await emit_chat_event(
+            message_id,
+            {"type": "agent-verdict", "node": key, "label": label, **_parse_verdict(verdict_text)},
+        )
+
+    return {
+        "findings": [{"agent": key, "label": label, "verdict": verdict_text, "ok": ok}],
+        "logs": [start_log, done_log],
+    }

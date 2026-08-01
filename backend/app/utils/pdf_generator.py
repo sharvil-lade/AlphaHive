@@ -4,14 +4,21 @@ import asyncio
 from io import BytesIO
 import markdown
 from jinja2 import Environment, FileSystemLoader
-from xhtml2pdf import pisa
 
 logger = logging.getLogger("pdf-generator")
 
 
 def compile_markdown_to_pdf(content_markdown: str, title: str) -> bytes:
-    """Synchronous CPU-bound Markdown to PDF conversion using xhtml2pdf."""
+    """Synchronous CPU-bound Markdown to PDF conversion using xhtml2pdf.
+
+    `xhtml2pdf` (via its `bidi` native dependency) can fail to import on some
+    Windows machines where an Application Control policy blocks the DLL. Importing
+    it lazily here — instead of at module top — keeps that failure contained to the
+    (optional, parked) PDF-report path so it can never crash server startup.
+    """
     try:
+        from xhtml2pdf import pisa  # lazy: see docstring
+
         # 1. Convert markdown to HTML (enable tables and extra structures)
         html_body = markdown.markdown(
             content_markdown, 

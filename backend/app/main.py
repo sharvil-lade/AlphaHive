@@ -33,6 +33,17 @@ async def lifespan(app: FastAPI):
             "qdrant": f"{settings.QDRANT_HOST}:{settings.QDRANT_PORT}",
         }
     )
+    # ── Production guardrails: warn loudly about insecure defaults so a misconfigured
+    # deploy is obvious in the logs rather than silently shipping wide open. ──
+    if settings.ENVIRONMENT == "production":
+        if "*" in settings.get_cors_origins():
+            logger.warning(
+                "SECURITY: CORS is open to '*' in production. Set CORS_ORIGINS to your "
+                "exact frontend domain(s) before exposing this service publicly."
+            )
+        if settings.POSTGRES_PASSWORD in ("postgrespassword", "1234", "postgres", ""):
+            logger.warning("SECURITY: POSTGRES_PASSWORD is a default/weak value in production — change it.")
+
     yield
     logger.info("Shutting down API service")
 
@@ -66,11 +77,14 @@ from app.core.metrics import MetricsMiddleware
 from app.core import metrics
 
 
-# ── CORS ── Use configured origins (hardened in production via CORS_ORIGINS env var)
+# ── CORS ── Use configured origins (hardened in production via CORS_ORIGINS env var).
+# allow_credentials is False: auth is a client-supplied session_id (query/body), not
+# cookies — so we never need credentialed CORS, and keeping it False lets the browser
+# honor a "*" origin in development (a wildcard origin + credentials is spec-invalid).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_cors_origins(),
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
