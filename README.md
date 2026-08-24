@@ -151,6 +151,31 @@ frontend/          # chat UI, live agent trace, portfolio import
 
 ---
 
+## Deploy on Vercel
+
+The repository is configured as a Vercel Services monorepo: Next.js serves the
+frontend at `/`, and FastAPI serves the backend under `/svc/api`. Vercel Services
+is currently a private-beta feature, so your Vercel account must have access to
+it before importing this project.
+
+1. Import the repository into Vercel and keep the project root at the repository
+   root so Vercel reads [`vercel.json`](vercel.json).
+2. Add the backend environment variables from [`.env.example`](.env.example) to
+   the Vercel project. Do not commit secrets.
+3. Set `ENVIRONMENT=production`, `CORS_ORIGINS` to the Vercel deployment URL(s),
+   and configure the external PostgreSQL, Redis, and Qdrant service URLs.
+4. Deploy. The frontend uses `/svc/api` automatically; set
+   `NEXT_PUBLIC_API_URL` only when the backend is hosted outside this Vercel
+   deployment.
+
+Vercel Functions are stateless and ephemeral. PostgreSQL, Redis, Qdrant, and
+long-running/background workloads must remain on managed external services or
+another server. If Vercel Services is unavailable for your account, deploy
+`frontend/` as a Next.js Vercel project and `backend/` on a Python-capable host,
+then set `NEXT_PUBLIC_API_URL` to the public backend URL.
+
+---
+
 ## Disclaimer
 
 Alpha Hive provides **educational research and analysis only**. It is not investment

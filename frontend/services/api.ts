@@ -1,4 +1,6 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Vercel Services mounts the FastAPI service at /svc/api. Override this for
+// local development or when the backend is hosted separately.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/svc/api';
 
 export async function fetchQuote(symbol: string): Promise<any> {
   const res = await fetch(`${API_BASE_URL}/api/v1/stocks/quote?symbol=${symbol}`);
@@ -256,6 +258,5 @@ export async function postChatMessage(conversationId: string, content: string): 
 export function getChatStreamUrl(messageId: string): string {
   return `${API_BASE_URL}/api/v1/chat/messages/${messageId}/stream`;
 }
-
 
 
