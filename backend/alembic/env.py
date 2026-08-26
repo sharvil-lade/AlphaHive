@@ -13,6 +13,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # Import our configuration settings and declarative base
 from app.core.config import settings
+from app.db.session import engine_kwargs
 from app.models.models import Base
 
 # this is the Alembic Config object, which provides
@@ -69,10 +70,14 @@ async def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = settings.DATABASE_URL
 
+    # Reuse the app's connect args (TLS, and the prepared-statement opt-out a
+    # transaction pooler needs) so migrations reach the same database the app does.
+    connect_args = engine_kwargs().get("connect_args", {})
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:

@@ -1,20 +1,18 @@
 "use client";
 
 import { createContext, useContext, ReactNode } from "react";
-import { useSessionId } from "../hooks/useSessionId";
 import { useChatSession } from "../hooks/useChatSession";
+import { useToast } from "../components/ui/Toast";
 
-type ChatSessionContextValue = ReturnType<typeof useChatSession> & { sessionId: string };
+type ChatSessionContextValue = ReturnType<typeof useChatSession>;
 
 const ChatSessionContext = createContext<ChatSessionContextValue | null>(null);
 
 export function ChatSessionProvider({ children }: { children: ReactNode }) {
-  const sessionId = useSessionId();
-  const session = useChatSession(sessionId);
+  const toast = useToast();
+  const session = useChatSession((message) => toast(message, "error"));
 
-  return (
-    <ChatSessionContext.Provider value={{ sessionId, ...session }}>{children}</ChatSessionContext.Provider>
-  );
+  return <ChatSessionContext.Provider value={session}>{children}</ChatSessionContext.Provider>;
 }
 
 export function useChatSessionContext(): ChatSessionContextValue {

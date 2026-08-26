@@ -1,7 +1,7 @@
 import logging
 import math
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
 
@@ -82,8 +82,6 @@ class BacktestService:
         trades = []
         equity_curve = []
 
-        buy_price = 0.0
-        buy_date = None
         buy_value = 0.0
 
         spy_start_price = float(merged["close_spy"].iloc[0])
@@ -120,8 +118,6 @@ class BacktestService:
             if buy_signal and shares == 0:
                 shares_to_buy = math.floor(cash / close_price)
                 if shares_to_buy > 0:
-                    buy_price = close_price
-                    buy_date = current_date_str
                     buy_value = shares_to_buy * close_price
                     cash -= buy_value
                     shares = shares_to_buy

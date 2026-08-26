@@ -95,30 +95,36 @@ Once imported, the hive researches every question in the context of what you hol
 
 ## Quickstart (local)
 
-You’ll need **Docker**, **Python 3.11+**, **Node 18+**, and an LLM proxy key
-(any provider works). Full config lives in [`.env.example`](.env.example).
+You'll need **Python 3.11+**, **Node 22+**, **Docker**, a **Supabase** project,
+and an LLM proxy key. Full config lives in [`.env.example`](.env.example).
 
 ```bash
 # 1. Copy the env template and fill in your keys
 cp .env.example .env
 
-# 2. Start the databases
-docker compose up -d postgres redis qdrant
-
-# 3. Backend
-cd backend
-python -m venv .venv && .venv/Scripts/activate    # (macOS/Linux: source .venv/bin/activate)
-pip install -r requirements.txt
-python -m alembic -c alembic.ini upgrade head
-uvicorn app.main:app --port 8000 --reload
-
-# 4. Frontend (new terminal)
-cd frontend
-npm install
-npm run dev
+# 2. Install, migrate, and start everything
+./build
 ```
 
+Two values you must set in `.env`:
+
+- **`SECRET_KEY`** — signs the session cookie.
+  Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+- **`DATABASE_URL`** — from Supabase → Project Settings → Database → Connection
+  string → URI, with `postgresql://` swapped for `postgresql+asyncpg://`
+
 Open **http://localhost:3000** and ask it something. 🎉
+
+`./build` is the only command you need. It also takes `setup`, `services`,
+`test`, and `stop` if you want to run a step on its own. Works in PowerShell,
+Git Bash, and on macOS/Linux.
+
+Postgres runs on Supabase, so nothing local. Docker is only for Redis (required)
+and Qdrant (optional — without it, just SEC filing search is unavailable).
+
+You can use Alpha Hive without an account. Signing up keeps whatever you've
+already done and makes it reachable from any device; **Account** lets you export
+or delete everything.
 
 Going to production? Follow **`docs/RELEASE_CHECKLIST.md`**.
 
@@ -132,7 +138,8 @@ Going to production? Follow **`docs/RELEASE_CHECKLIST.md`**.
 | **Models** | Any provider via a LiteLLM proxy (swap models with env vars, no code changes) |
 | **Backend** | FastAPI + async SQLAlchemy, streaming answers over SSE |
 | **Frontend** | Next.js 15 + React 19, Tailwind |
-| **Data** | PostgreSQL (chat, portfolio) · Redis (cache, live streaming) · Qdrant (SEC filings) |
+| **Auth** | Email + password, signed httpOnly session cookie |
+| **Data** | Supabase Postgres (accounts, chat, portfolio) · Redis (cache, live streaming) · Qdrant (SEC filings) |
 | **Market data** | Yahoo/BSE (India‑first), Finnhub & Twelve Data (global), Marketaux (news) |
 
 ```
@@ -142,9 +149,10 @@ backend/app/
     chat_nodes.py  #   how each agent runs + streams its status/verdict
     graph.py       #   wires the supervisor → specialists → final answer
     tools/         #   each data source as an agent tool (the extension point)
+  core/            # config, session identity + ownership guards, rate limiting
   services/        # market data, news, portfolio, Groww import, LLM client
-  api/             # chat + portfolio endpoints
-frontend/          # chat UI, live agent trace, portfolio import
+  api/             # auth + chat + portfolio endpoints
+frontend/          # landing page, chat UI, live agent trace, portfolio, account
 ```
 
 *Watchlist, alerts, and backtesting are built but parked for a future release.*
@@ -162,15 +170,16 @@ it before importing this project.
    root so Vercel reads [`vercel.json`](vercel.json).
 2. Add the backend environment variables from [`.env.example`](.env.example) to
    the Vercel project. Do not commit secrets.
-3. Set `ENVIRONMENT=production`, `CORS_ORIGINS` to the Vercel deployment URL(s),
-   and configure the external PostgreSQL, Redis, and Qdrant service URLs.
+3. Set `ENVIRONMENT=production`, a strong `SECRET_KEY`, and `CORS_ORIGINS` to
+   your exact deployment URL(s) — the app refuses to boot without them. Use the
+   Supabase **transaction pooler** (port 6543) for `DATABASE_URL`.
 4. Deploy. The frontend uses `/svc/api` automatically; set
    `NEXT_PUBLIC_API_URL` only when the backend is hosted outside this Vercel
    deployment.
 
-Vercel Functions are stateless and ephemeral. PostgreSQL, Redis, Qdrant, and
-long-running/background workloads must remain on managed external services or
-another server. If Vercel Services is unavailable for your account, deploy
+Vercel Functions are stateless and ephemeral. Redis, Qdrant, and long-running
+background workloads must live on managed services or another server. If Vercel
+Services is unavailable for your account, deploy
 `frontend/` as a Next.js Vercel project and `backend/` on a Python-capable host,
 then set `NEXT_PUBLIC_API_URL` to the public backend URL.
 

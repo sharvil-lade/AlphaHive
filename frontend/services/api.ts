@@ -1,262 +1,204 @@
-// Vercel Services mounts the FastAPI service at /svc/api. Override this for
-// local development or when the backend is hosted separately.
+// Vercel Services mounts FastAPI at /svc/api; next.config.js proxies the same path in
+// dev. Always same-origin, so the httpOnly session cookie is sent automatically.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/svc/api';
+const V1 = `${API_BASE_URL}/api/v1`;
 
-export async function fetchQuote(symbol: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/stocks/quote?symbol=${symbol}`);
-  if (!res.ok) throw new Error(`Failed to fetch quote: ${res.statusText}`);
-  return res.json();
-}
-
-export async function fetchProfile(symbol: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/stocks/profile?symbol=${symbol}`);
-  if (!res.ok) throw new Error(`Failed to fetch profile: ${res.statusText}`);
-  return res.json();
-}
-
-export async function fetchHistory(symbol: string, range: string = '1mo'): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/stocks/history?symbol=${symbol}&range_str=${range}`);
-  if (!res.ok) throw new Error(`Failed to fetch history: ${res.statusText}`);
-  return res.json();
-}
-
-export async function fetchTechnicalPosture(symbol: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/indicators/ta?symbol=${symbol}`);
-  if (!res.ok) throw new Error(`Failed to fetch technical posture: ${res.statusText}`);
-  return res.json();
-}
-
-export async function fetchSentiment(symbol: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/sentiment/summary?symbol=${symbol}`);
-  if (!res.ok) throw new Error(`Failed to fetch sentiment: ${res.statusText}`);
-  return res.json();
-}
-
-export async function runAgentWorkflow(symbol: string, sessionId: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/agents/run?symbol=${symbol}&session_id=${sessionId}`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(`Failed to trigger agent workflow: ${res.statusText}`);
-  return res.json();
-}
-
-export async function fetchReportsHistory(sessionId: string): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/reports/history?session_id=${sessionId}`);
-  if (!res.ok) throw new Error(`Failed to fetch reports history: ${res.statusText}`);
-  return res.json();
-}
-
-export async function fetchReportDetail(runId: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/agents/run/${runId}`);
-  if (!res.ok) throw new Error(`Failed to fetch report detail: ${res.statusText}`);
-  return res.json();
-}
-
-export function getDownloadUrl(runId: string, format: 'markdown' | 'pdf'): string {
-  return `${API_BASE_URL}/api/v1/reports/${runId}/${format}`;
-}
-
-export async function fetchPortfolio(sessionId: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios?session_id=${sessionId}`);
-  if (!res.ok) throw new Error(`Failed to fetch portfolio: ${res.statusText}`);
-  return res.json();
-}
-
-export async function addPortfolioHolding(
-  sessionId: string,
-  symbol: string,
-  shares: number,
-  averageBuyPrice: number
-): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/holdings?session_id=${sessionId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol, shares, average_buy_price: averageBuyPrice }),
-  });
-  if (!res.ok) throw new Error(`Failed to add portfolio holding: ${res.statusText}`);
-  return res.json();
-}
-
-export async function updatePortfolioHolding(
-  holdingId: string,
-  shares: number,
-  averageBuyPrice: number
-): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/holdings/${holdingId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ shares, average_buy_price: averageBuyPrice }),
-  });
-  if (!res.ok) throw new Error(`Failed to update portfolio holding: ${res.statusText}`);
-  return res.json();
-}
-
-export async function deletePortfolioHolding(holdingId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/holdings/${holdingId}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) throw new Error(`Failed to delete portfolio holding: ${res.statusText}`);
-}
-
-export async function fetchPortfolioSummary(sessionId: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/summary?session_id=${sessionId}`);
-  if (!res.ok) throw new Error(`Failed to fetch portfolio summary: ${res.statusText}`);
-  return res.json();
-}
-
-async function parseError(res: Response, fallback: string): Promise<string> {
-  try {
-    const body = await res.json();
-    return body?.detail || fallback;
-  } catch {
-    return fallback;
+/** Thrown for any non-2xx response, carrying the server's message and status. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly requestId?: string
+  ) {
+    super(message);
+    this.name = 'ApiError';
   }
 }
 
-export async function importGrowwPortfolio(
-  sessionId: string,
-  accessToken: string,
-  replace: boolean = true
-): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/portfolios/import/groww?session_id=${sessionId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ access_token: accessToken, replace }),
-  });
-  if (!res.ok) throw new Error(await parseError(res, `Groww import failed: ${res.statusText}`));
-  return res.json();
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${V1}${path}`, {
+      credentials: 'same-origin',
+      ...init,
+      headers: {
+        ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...init.headers,
+      },
+    });
+  } catch {
+    throw new ApiError("Can't reach the server. Check your connection and try again.", 0);
+  }
+
+  if (!res.ok) {
+    let detail = res.statusText || 'Request failed';
+    let requestId: string | undefined;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : detail;
+      requestId = body?.request_id;
+    } catch {
+      // Non-JSON error body (proxy timeout, HTML error page) — keep the status text.
+    }
+    throw new ApiError(detail, res.status, requestId);
+  }
+
+  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
-export async function importPortfolioFile(
-  sessionId: string,
-  file: File,
-  replace: boolean = true
-): Promise<any> {
+const post = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface Session {
+  authenticated: boolean;
+  user_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+}
+
+export interface Holding {
+  id: string;
+  symbol: string;
+  shares: number;
+  average_buy_price: number;
+  current_price: number;
+  total_value: number;
+  total_cost: number;
+  gain_loss: number;
+  gain_loss_percentage: number;
+  sector: string;
+  beta: number;
+  volatility: number;
+}
+
+export interface PortfolioSummary {
+  portfolio_id: string;
+  name: string;
+  total_value: number;
+  total_cost: number;
+  gain_loss: number;
+  gain_loss_percentage: number;
+  weighted_beta: number;
+  weighted_volatility: number;
+  holdings: Holding[];
+  sector_weights: Record<string, number>;
+}
+
+export interface ImportResult {
+  imported: number;
+  replaced: boolean;
+  portfolio_id: string;
+  message: string;
+}
+
+export interface Conversation {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TraceRecord {
+  id: string;
+  node: string;
+  status: 'running' | 'completed' | 'failed';
+  summary: string | null;
+  label: string | null;
+  rating: string | null;
+  confidence: number | null;
+}
+
+export interface MessageRecord {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  created_at: string;
+  traces: TraceRecord[];
+}
+
+export interface ConversationDetail extends Conversation {
+  messages: MessageRecord[];
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export const fetchSession = () => request<Session>('/auth/session');
+export const signup = (email: string, password: string, name?: string) =>
+  post<Session>('/auth/signup', { email, password, name });
+export const login = (email: string, password: string) =>
+  post<Session>('/auth/login', { email, password });
+export const logout = () => post<void>('/auth/logout');
+export const deleteAccount = () => request<void>('/auth/account', { method: 'DELETE' });
+export const exportDataUrl = () => `${V1}/auth/export`;
+
+// ── Portfolio ─────────────────────────────────────────────────────────────────
+
+export const fetchPortfolioSummary = () => request<PortfolioSummary>('/portfolios/summary');
+
+export const addPortfolioHolding = (symbol: string, shares: number, averageBuyPrice: number) =>
+  post<Holding>('/portfolios/holdings', {
+    symbol,
+    shares,
+    average_buy_price: averageBuyPrice,
+  });
+
+export const updatePortfolioHolding = (
+  holdingId: string,
+  shares: number,
+  averageBuyPrice: number
+) =>
+  request<Holding>(`/portfolios/holdings/${holdingId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ shares, average_buy_price: averageBuyPrice }),
+  });
+
+export const deletePortfolioHolding = (holdingId: string) =>
+  request<void>(`/portfolios/holdings/${holdingId}`, { method: 'DELETE' });
+
+export const importGrowwPortfolio = (accessToken: string, replace = true) =>
+  post<ImportResult>('/portfolios/import/groww', { access_token: accessToken, replace });
+
+export const importPortfolioFile = (file: File, replace = true) => {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(
-    `${API_BASE_URL}/api/v1/portfolios/import/file?session_id=${sessionId}&replace=${replace}`,
-    { method: 'POST', body: form }
-  );
-  if (!res.ok) throw new Error(await parseError(res, `File import failed: ${res.statusText}`));
-  return res.json();
-}
-
-export async function fetchWatchlist(sessionId: string): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/watchlist?session_id=${sessionId}`);
-  if (!res.ok) throw new Error(`Failed to fetch watchlist: ${res.statusText}`);
-  return res.json();
-}
-
-export async function addToWatchlist(sessionId: string, symbol: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/watchlist?session_id=${sessionId}`, {
+  return request<ImportResult>(`/portfolios/import/file?replace=${replace}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol }),
+    body: form,
   });
-  if (!res.ok) throw new Error(`Failed to add symbol to watchlist: ${res.statusText}`);
-  return res.json();
-}
-
-export async function deleteFromWatchlist(sessionId: string, symbol: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/watchlist/${symbol}?session_id=${sessionId}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) throw new Error(`Failed to delete symbol from watchlist: ${res.statusText}`);
-}
-
-export async function fetchAlerts(sessionId: string, activeOnly: boolean = true): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/alerts?session_id=${sessionId}&active_only=${activeOnly}`);
-  if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.statusText}`);
-  return res.json();
-}
-
-export async function createAlert(
-  sessionId: string,
-  symbol: string,
-  triggerType: string,
-  triggerValue: number
-): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/alerts?session_id=${sessionId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol, trigger_type: triggerType, trigger_value: triggerValue }),
-  });
-  if (!res.ok) throw new Error(`Failed to create alert: ${res.statusText}`);
-  return res.json();
-}
-
-export async function deleteAlert(sessionId: string, alertId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/alerts/${alertId}?session_id=${sessionId}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) throw new Error(`Failed to cancel alert: ${res.statusText}`);
-}
-
-export async function runAlertCheck(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/alerts/check`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(`Failed to execute alerts scanner: ${res.statusText}`);
-  return res.json();
-}
-
-export async function runBacktest(
-  symbol: string,
-  strategy: string,
-  initialCapital: number,
-  rangeStr: string
-): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/backtest`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      symbol,
-      strategy,
-      initial_capital: initialCapital,
-      range_str: rangeStr,
-    }),
-  });
-  if (!res.ok) throw new Error(`Failed to run backtest: ${res.statusText}`);
-  return res.json();
-}
+};
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
-export async function createConversation(sessionId: string, title?: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, title }),
+export const createConversation = (title?: string) =>
+  post<Conversation>('/chat/conversations', { title });
+
+export const fetchConversations = (limit = 50) =>
+  request<Conversation[]>(`/chat/conversations?limit=${limit}`);
+
+export const fetchConversationDetail = (conversationId: string) =>
+  request<ConversationDetail>(`/chat/conversations/${conversationId}`);
+
+export const renameConversation = (conversationId: string, title: string) =>
+  request<Conversation>(`/chat/conversations/${conversationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
   });
-  if (!res.ok) throw new Error(`Failed to create conversation: ${res.statusText}`);
-  return res.json();
-}
 
-export async function fetchConversations(sessionId: string): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations?session_id=${sessionId}`);
-  if (!res.ok) throw new Error(`Failed to fetch conversations: ${res.statusText}`);
-  return res.json();
-}
+export const deleteConversation = (conversationId: string) =>
+  request<void>(`/chat/conversations/${conversationId}`, { method: 'DELETE' });
 
-export async function fetchConversationDetail(conversationId: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations/${conversationId}`);
-  if (!res.ok) throw new Error(`Failed to fetch conversation: ${res.statusText}`);
-  return res.json();
-}
+export const postChatMessage = (conversationId: string, content: string) =>
+  post<{ user_message: MessageRecord; assistant_message: MessageRecord }>(
+    `/chat/conversations/${conversationId}/messages`,
+    { content }
+  );
 
-export async function postChatMessage(conversationId: string, content: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/chat/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
-  });
-  if (!res.ok) throw new Error(`Failed to send message: ${res.statusText}`);
-  return res.json();
-}
+export const stopChatMessage = (messageId: string) =>
+  post<{ status: string }>(`/chat/messages/${messageId}/stop`);
 
-export function getChatStreamUrl(messageId: string): string {
-  return `${API_BASE_URL}/api/v1/chat/messages/${messageId}/stream`;
-}
-
-
+export const getChatStreamUrl = (messageId: string, fromIndex = 0) =>
+  `${V1}/chat/messages/${messageId}/stream?from_index=${fromIndex}`;

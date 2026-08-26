@@ -30,7 +30,7 @@ async def index_sec_filing(
     if not chunks:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Parsed filing text yielded 0 chunks for indexing."
+            detail="Parsed filing text yielded 0 chunks for indexing."
         )
 
     # 3. Upsert into Qdrant Vector store

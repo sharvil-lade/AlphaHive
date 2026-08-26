@@ -64,7 +64,8 @@ export function Select({
 
 export function PageHeader({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="h-14 shrink-0 border-b border-surface-border flex items-center justify-between px-6">
+    // pl-14 clears the fixed mobile menu button rendered by the Sidebar.
+    <div className="h-14 shrink-0 border-b border-surface-border flex items-center justify-between pl-14 pr-4 md:px-6">
       <div>
         <h1 className="text-sm font-semibold">{title}</h1>
         {description && <p className="text-[11px] text-mutedText">{description}</p>}

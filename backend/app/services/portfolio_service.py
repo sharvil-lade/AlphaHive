@@ -1,6 +1,5 @@
 import logging
-import uuid
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -111,30 +110,6 @@ class PortfolioService:
 
         await db.commit()
         return {"imported": imported, "replaced": replace, "portfolio_id": str(portfolio.id)}
-
-    async def update_holding(
-        self, db: AsyncSession, holding_id: uuid.UUID, shares: float, average_buy_price: float
-    ) -> Optional[PortfolioHolding]:
-        """Modify shares or buy price on an existing holding."""
-        stmt = select(PortfolioHolding).where(PortfolioHolding.id == holding_id)
-        result = await db.execute(stmt)
-        holding = result.scalar_one_or_none()
-        if holding:
-            holding.shares = shares
-            holding.average_buy_price = average_buy_price
-            await db.commit()
-        return holding
-
-    async def delete_holding(self, db: AsyncSession, holding_id: uuid.UUID) -> bool:
-        """Remove a holding from database."""
-        stmt = select(PortfolioHolding).where(PortfolioHolding.id == holding_id)
-        result = await db.execute(stmt)
-        holding = result.scalar_one_or_none()
-        if holding:
-            await db.delete(holding)
-            await db.commit()
-            return True
-        return False
 
     async def get_portfolio_summary(self, db: AsyncSession, session_id: str) -> Dict[str, Any]:
         """Fetch portfolio holdings details and calculate volatility, beta, and sector allocation metrics."""

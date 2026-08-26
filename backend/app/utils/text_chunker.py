@@ -127,7 +127,7 @@ class TextChunker:
                 continue
                 
             split_texts = self.text_splitter.split_text(sec_text)
-            for chunk_idx, text in enumerate(split_texts):
+            for text in split_texts:
                 chunks.append({
                     "text": text,
                     "section": sec_name,

@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any
 import numpy as np
 from app.agents.state import AgentState
 from app.services.vector_store import vector_store

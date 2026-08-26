@@ -2,7 +2,7 @@ import inspect
 import os
 import sys
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Union, get_args, get_origin
+from typing import Any, Dict, List, Union, get_args, get_origin
 from uuid import UUID
 
 # Adjust path so `app.*` (backend/app/) is importable regardless of cwd.
@@ -69,7 +69,7 @@ def generate_typescript_interfaces() -> str:
 
     # Dynamically extract all schemas declared in the schemas module
     schemas_to_export = []
-    for name, obj in inspect.getmembers(schemas):
+    for _name, obj in inspect.getmembers(schemas):
         if inspect.isclass(obj) and hasattr(obj, "model_fields") and obj.__module__ == schemas.__name__:
             schemas_to_export.append(obj)
 

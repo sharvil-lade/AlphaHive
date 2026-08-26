@@ -6,6 +6,8 @@ from app.main import app
 from app.services.sentiment_service import sentiment_service
 
 # Use pytest-asyncio to handle async tests
+from conftest import requires_redis
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -17,6 +19,7 @@ async def client():
         yield ac
 
 
+@requires_redis
 async def test_sentiment_summary_endpoint(client):
     """Test sentiment/summary endpoint, verifying sentiment scoring and structured response formats."""
     # Query Apple sentiment

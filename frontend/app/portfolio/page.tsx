@@ -2,21 +2,25 @@
 
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Pencil, Upload, KeyRound, Loader2 } from "lucide-react";
-import { useSessionId } from "../../hooks/useSessionId";
+import { KeyRound, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import {
-  fetchPortfolioSummary,
   addPortfolioHolding,
-  updatePortfolioHolding,
   deletePortfolioHolding,
+  fetchPortfolioSummary,
   importGrowwPortfolio,
   importPortfolioFile,
+  updatePortfolioHolding,
+  ApiError,
 } from "../../services/api";
-import { Card, Button, Input, PageHeader, Delta } from "../../components/ui/primitives";
+import { useToast } from "../../components/ui/Toast";
+import { Button, Card, Input, PageHeader, Delta } from "../../components/ui/primitives";
+
+const currency = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function PortfolioPage() {
-  const sessionId = useSessionId();
   const queryClient = useQueryClient();
+  const toast = useToast();
+
   const [isAdding, setIsAdding] = useState(false);
   const [symbol, setSymbol] = useState("");
   const [shares, setShares] = useState("");
@@ -24,32 +28,41 @@ export default function PortfolioPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editShares, setEditShares] = useState("");
   const [editPrice, setEditPrice] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const [showImport, setShowImport] = useState(false);
   const [growwToken, setGrowwToken] = useState("");
   const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: summary } = useQuery({
-    queryKey: ["portfolio", sessionId],
-    queryFn: () => fetchPortfolioSummary(sessionId),
-    enabled: !!sessionId,
+  const { data: summary, isLoading } = useQuery({
+    queryKey: ["portfolio"],
+    queryFn: fetchPortfolioSummary,
   });
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["portfolio", sessionId] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+
+  const run = async (fn: () => Promise<unknown>, fallback: string) => {
+    try {
+      await fn();
+      refresh();
+      return true;
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : fallback, "error");
+      return false;
+    }
+  };
 
   const handleGrowwImport = async () => {
     if (!growwToken.trim()) return;
     setImporting(true);
-    setImportMsg(null);
     try {
-      const result = await importGrowwPortfolio(sessionId, growwToken.trim(), true);
-      setImportMsg({ ok: true, text: result.message || "Imported from Groww." });
+      const result = await importGrowwPortfolio(growwToken.trim(), true);
+      toast(result.message || "Imported from Groww.");
       setGrowwToken("");
       refresh();
-    } catch (e: any) {
-      setImportMsg({ ok: false, text: e.message || "Groww import failed." });
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Groww import failed.", "error");
     } finally {
       setImporting(false);
     }
@@ -59,13 +72,12 @@ export default function PortfolioPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
-    setImportMsg(null);
     try {
-      const result = await importPortfolioFile(sessionId, file, true);
-      setImportMsg({ ok: true, text: result.message || "Imported from file." });
+      const result = await importPortfolioFile(file, true);
+      toast(result.message || "Imported from file.");
       refresh();
-    } catch (err: any) {
-      setImportMsg({ ok: false, text: err.message || "File import failed." });
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "File import failed.", "error");
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -75,59 +87,105 @@ export default function PortfolioPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!symbol || !shares || !price) return;
-    await addPortfolioHolding(sessionId, symbol.toUpperCase().trim(), parseFloat(shares), parseFloat(price));
-    setSymbol("");
-    setShares("");
-    setPrice("");
-    setIsAdding(false);
-    refresh();
+    const ok = await run(
+      () => addPortfolioHolding(symbol.toUpperCase().trim(), parseFloat(shares), parseFloat(price)),
+      "Couldn't add that holding."
+    );
+    if (ok) {
+      setSymbol("");
+      setShares("");
+      setPrice("");
+      setIsAdding(false);
+      toast(`Added ${symbol.toUpperCase().trim()}.`);
+    }
   };
 
   const handleUpdate = async (holdingId: string) => {
     if (!editShares || !editPrice) return;
-    await updatePortfolioHolding(holdingId, parseFloat(editShares), parseFloat(editPrice));
-    setEditingId(null);
-    refresh();
+    const ok = await run(
+      () => updatePortfolioHolding(holdingId, parseFloat(editShares), parseFloat(editPrice)),
+      "Couldn't update that holding."
+    );
+    if (ok) setEditingId(null);
   };
 
   const handleDelete = async (holdingId: string) => {
-    await deletePortfolioHolding(holdingId);
-    refresh();
+    const ok = await run(() => deletePortfolioHolding(holdingId), "Couldn't remove that holding.");
+    if (ok) {
+      setPendingDelete(null);
+      toast("Holding removed.");
+    }
   };
+
+  const sectors = Object.entries(summary?.sector_weights ?? {}).sort((a, b) => b[1] - a[1]);
+  const holdings = summary?.holdings ?? [];
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <PageHeader
         title="Portfolio"
-        description="Optional — add your Groww holdings so the chat can research in the context of what you own"
+        description="Optional — add your holdings so the chat can research in the context of what you own"
       />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl w-full mx-auto">
-        {summary && summary.holdings.length > 0 && (
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 max-w-5xl w-full mx-auto">
+        {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Card>
-              <div className="text-[11px] text-mutedText mb-1">Total Value</div>
-              <div className="text-lg font-semibold">₹{summary.total_value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-            </Card>
-            <Card>
-              <div className="text-[11px] text-mutedText mb-1">Gain / Loss</div>
-              <div className="text-lg font-semibold"><Delta value={summary.gain_loss_percentage} /></div>
-            </Card>
-            <Card>
-              <div className="text-[11px] text-mutedText mb-1">Weighted Beta</div>
-              <div className="text-lg font-semibold">{summary.weighted_beta.toFixed(2)}</div>
-            </Card>
-            <Card>
-              <div className="text-[11px] text-mutedText mb-1">Volatility</div>
-              <div className="text-lg font-semibold">{(summary.weighted_volatility * 100).toFixed(1)}%</div>
-            </Card>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-[74px] rounded-lg border border-surface-border bg-surface animate-pulse" />
+            ))}
           </div>
+        ) : (
+          holdings.length > 0 && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                <Card>
+                  <div className="text-[11px] text-mutedText mb-1">Total Value</div>
+                  <div className="text-lg font-semibold">{currency(summary!.total_value)}</div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] text-mutedText mb-1">Gain / Loss</div>
+                  <div className="text-lg font-semibold">
+                    <Delta value={summary!.gain_loss_percentage} />
+                  </div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] text-mutedText mb-1">Weighted Beta</div>
+                  <div className="text-lg font-semibold">{summary!.weighted_beta.toFixed(2)}</div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] text-mutedText mb-1">Volatility</div>
+                  <div className="text-lg font-semibold">{(summary!.weighted_volatility * 100).toFixed(1)}%</div>
+                </Card>
+              </div>
+
+              {sectors.length > 0 && (
+                <Card>
+                  <h2 className="text-[11px] text-mutedText mb-3">Sector allocation</h2>
+                  <ul className="space-y-2">
+                    {sectors.map(([sector, weight]) => (
+                      <li key={sector} className="flex items-center gap-3 text-[13px]">
+                        <span className="w-28 sm:w-40 shrink-0 truncate text-mutedText">{sector}</span>
+                        {/* A plain div bar beats pulling in a chart library for one metric. */}
+                        <span className="flex-1 h-1.5 rounded-full bg-surface-hover overflow-hidden">
+                          <span
+                            className="block h-full bg-foreground/70 rounded-full"
+                            style={{ width: `${Math.min(weight * 100, 100).toFixed(1)}%` }}
+                          />
+                        </span>
+                        <span className="w-12 text-right tabular-nums">{(weight * 100).toFixed(1)}%</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              )}
+            </>
+          )
         )}
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-mutedText">Holdings</h2>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => { setShowImport((v) => !v); setImportMsg(null); }}>
+            <Button variant="outline" onClick={() => setShowImport((v) => !v)}>
               <Upload className="w-3.5 h-3.5" /> Import from Groww
             </Button>
             <Button variant="outline" onClick={() => setIsAdding((v) => !v)}>
@@ -139,34 +197,37 @@ export default function PortfolioPage() {
         {showImport && (
           <Card className="space-y-4">
             <div>
-              <div className="text-sm font-medium mb-1 flex items-center gap-1.5">
+              <h3 className="text-sm font-medium mb-1 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5" /> Option 1 — Groww access token
-              </div>
+              </h3>
               <p className="text-[12px] text-mutedText mb-2">
                 Generate a daily access token on Groww&apos;s{" "}
-                <a href="https://groww.in/trade-api" target="_blank" rel="noreferrer" className="underline">Trading APIs page</a>{" "}
-                (requires a Groww API subscription; tokens expire at 6 AM daily) and paste it here to sync your holdings.
+                <a href="https://groww.in/trade-api" target="_blank" rel="noreferrer" className="underline">
+                  Trading APIs page
+                </a>{" "}
+                and paste it here. The token is used for this request only and never stored.
               </p>
               <div className="flex flex-wrap gap-2 items-end">
                 <Input
                   value={growwToken}
                   onChange={(e) => setGrowwToken(e.target.value)}
                   placeholder="Paste Groww access token"
+                  aria-label="Groww access token"
                   className="flex-1 min-w-[220px]"
                   type="password"
                 />
                 <Button onClick={handleGrowwImport} disabled={importing || !growwToken.trim()}>
-                  {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Sync
+                  {importing && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Sync
                 </Button>
               </div>
             </div>
 
             <div className="border-t border-surface-border pt-4">
-              <div className="text-sm font-medium mb-1 flex items-center gap-1.5">
+              <h3 className="text-sm font-medium mb-1 flex items-center gap-1.5">
                 <Upload className="w-3.5 h-3.5" /> Option 2 — Upload a statement (no subscription)
-              </div>
+              </h3>
               <p className="text-[12px] text-mutedText mb-2">
-                Export Holdings or P&amp;L from Groww&apos;s Reports section (CSV or Excel) and upload the file.
+                Export Holdings or P&amp;L from Groww&apos;s Reports section (CSV or Excel).
                 Importing replaces your current holdings.
               </p>
               <input
@@ -175,15 +236,10 @@ export default function PortfolioPage() {
                 accept=".csv,.xlsx,.xls"
                 onChange={handleFileImport}
                 disabled={importing}
-                className="block text-sm text-mutedText file:mr-3 file:rounded-md file:border file:border-surface-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-surface-hover"
+                aria-label="Upload holdings file"
+                className="block w-full text-sm text-mutedText file:mr-3 file:rounded-md file:border file:border-surface-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-foreground hover:file:bg-surface-hover"
               />
             </div>
-
-            {importMsg && (
-              <div className={importMsg.ok ? "text-[12px] text-bullish" : "text-[12px] text-bearish"}>
-                {importMsg.text}
-              </div>
-            )}
           </Card>
         )}
 
@@ -191,16 +247,22 @@ export default function PortfolioPage() {
           <Card>
             <form onSubmit={handleAdd} className="flex flex-wrap gap-2 items-end">
               <div>
-                <label className="text-[11px] text-mutedText block mb-1">Symbol</label>
-                <Input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="RELIANCE" />
+                <label htmlFor="symbol" className="text-[11px] text-mutedText block mb-1">
+                  Symbol
+                </label>
+                <Input id="symbol" required value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="RELIANCE" />
               </div>
               <div>
-                <label className="text-[11px] text-mutedText block mb-1">Shares</label>
-                <Input value={shares} onChange={(e) => setShares(e.target.value)} type="number" placeholder="10" />
+                <label htmlFor="shares" className="text-[11px] text-mutedText block mb-1">
+                  Shares
+                </label>
+                <Input id="shares" required value={shares} onChange={(e) => setShares(e.target.value)} type="number" step="any" min="0" placeholder="10" />
               </div>
               <div>
-                <label className="text-[11px] text-mutedText block mb-1">Avg. Buy Price</label>
-                <Input value={price} onChange={(e) => setPrice(e.target.value)} type="number" placeholder="1250.00" />
+                <label htmlFor="price" className="text-[11px] text-mutedText block mb-1">
+                  Avg. Buy Price
+                </label>
+                <Input id="price" required value={price} onChange={(e) => setPrice(e.target.value)} type="number" step="any" min="0" placeholder="1250.00" />
               </div>
               <Button type="submit">Add</Button>
             </form>
@@ -208,66 +270,87 @@ export default function PortfolioPage() {
         )}
 
         <Card className="p-0 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-border text-[11px] text-mutedText">
-                <th className="text-left px-4 py-2 font-medium">Symbol</th>
-                <th className="text-right px-4 py-2 font-medium">Shares</th>
-                <th className="text-right px-4 py-2 font-medium">Avg. Price</th>
-                <th className="text-right px-4 py-2 font-medium">Current</th>
-                <th className="text-right px-4 py-2 font-medium">Value</th>
-                <th className="text-right px-4 py-2 font-medium">Gain/Loss</th>
-                <th className="text-right px-4 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(summary?.holdings ?? []).map((h: any) => (
-                <tr key={h.id} className="border-b border-surface-border last:border-0">
-                  {editingId === h.id ? (
-                    <td colSpan={7} className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium w-20">{h.symbol}</span>
-                        <Input value={editShares} onChange={(e) => setEditShares(e.target.value)} type="number" placeholder="Shares" className="w-24" />
-                        <Input value={editPrice} onChange={(e) => setEditPrice(e.target.value)} type="number" placeholder="Avg price" className="w-28" />
-                        <Button onClick={() => handleUpdate(h.id)}>Save</Button>
-                        <Button variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
-                      </div>
-                    </td>
-                  ) : (
-                    <>
-                      <td className="px-4 py-2.5 font-medium">{h.symbol}</td>
-                      <td className="px-4 py-2.5 text-right text-mutedText">{h.shares}</td>
-                      <td className="px-4 py-2.5 text-right text-mutedText">{h.average_buy_price.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right">{h.current_price.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right">{h.total_value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                      <td className="px-4 py-2.5 text-right"><Delta value={h.gain_loss_percentage} /></td>
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="flex justify-end gap-1">
-                          <button
-                            onClick={() => { setEditingId(h.id); setEditShares(String(h.shares)); setEditPrice(String(h.average_buy_price)); }}
-                            className="p-1 text-mutedText hover:text-foreground"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleDelete(h.id)} className="p-1 text-mutedText hover:text-bearish">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <caption className="sr-only">Your portfolio holdings</caption>
+              <thead>
+                <tr className="border-b border-surface-border text-[11px] text-mutedText">
+                  <th scope="col" className="text-left px-4 py-2 font-medium">Symbol</th>
+                  <th scope="col" className="text-right px-4 py-2 font-medium">Shares</th>
+                  <th scope="col" className="text-right px-4 py-2 font-medium">Avg. Price</th>
+                  <th scope="col" className="text-right px-4 py-2 font-medium">Current</th>
+                  <th scope="col" className="text-right px-4 py-2 font-medium">Value</th>
+                  <th scope="col" className="text-right px-4 py-2 font-medium">Gain/Loss</th>
+                  <th scope="col" className="text-right px-4 py-2 font-medium">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {holdings.map((h) => (
+                  <tr key={h.id} className="border-b border-surface-border last:border-0">
+                    {editingId === h.id ? (
+                      <td colSpan={7} className="px-4 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium w-20">{h.symbol}</span>
+                          <Input value={editShares} onChange={(e) => setEditShares(e.target.value)} type="number" step="any" min="0" aria-label={`Shares of ${h.symbol}`} className="w-24" />
+                          <Input value={editPrice} onChange={(e) => setEditPrice(e.target.value)} type="number" step="any" min="0" aria-label={`Average price of ${h.symbol}`} className="w-28" />
+                          <Button onClick={() => handleUpdate(h.id)}>Save</Button>
+                          <Button variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
                         </div>
                       </td>
-                    </>
-                  )}
-                </tr>
-              ))}
-              {(!summary || summary.holdings.length === 0) && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-mutedText text-sm">
-                    No holdings yet — import from Groww or add a position above. This is optional;
-                    you can research any stock in chat without a portfolio.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    ) : (
+                      <>
+                        <th scope="row" className="px-4 py-2.5 font-medium text-left">{h.symbol}</th>
+                        <td className="px-4 py-2.5 text-right text-mutedText tabular-nums">{h.shares}</td>
+                        <td className="px-4 py-2.5 text-right text-mutedText tabular-nums">{h.average_buy_price.toFixed(2)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{h.current_price.toFixed(2)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{currency(h.total_value)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums"><Delta value={h.gain_loss_percentage} /></td>
+                        <td className="px-4 py-2.5 text-right">
+                          {pendingDelete === h.id ? (
+                            <div className="flex justify-end gap-1.5">
+                              <Button variant="danger" onClick={() => handleDelete(h.id)}>Remove</Button>
+                              <Button variant="ghost" onClick={() => setPendingDelete(null)}>Cancel</Button>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingId(h.id);
+                                  setEditShares(String(h.shares));
+                                  setEditPrice(String(h.average_buy_price));
+                                }}
+                                aria-label={`Edit ${h.symbol}`}
+                                className="p-1 text-mutedText hover:text-foreground"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setPendingDelete(h.id)}
+                                aria-label={`Remove ${h.symbol}`}
+                                className="p-1 text-mutedText hover:text-bearish"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+                {!isLoading && holdings.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-mutedText text-sm">
+                      No holdings yet — import from Groww or add a position above. This is optional;
+                      you can research any stock in chat without a portfolio.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </Card>
       </div>
     </div>

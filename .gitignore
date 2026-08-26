@@ -1,6 +1,8 @@
 # System Environment
 .env
 .env.*
+# ...but the template must ship, the README tells you to copy it.
+!.env.example
 .venv
 venv/
 env/
@@ -46,4 +48,14 @@ ehthumbs.db
 Desktop.ini
 .DS_Store
 
+# Claude Code local state
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+
+# Next.js build output (any location)
+.next/
+
+# Internal working docs (PRD, analysis, implementation notes) stay local.
+# The release checklist ships, because the README links to it.
 docs/*
+!docs/RELEASE_CHECKLIST.md

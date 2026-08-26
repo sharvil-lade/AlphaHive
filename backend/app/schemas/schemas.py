@@ -1,7 +1,41 @@
 from datetime import date, datetime
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+class SignupRequest(BaseModel):
+    email: EmailStr
+    # Upper bound is a DoS guard: bcrypt cost is fixed, but hashing an unbounded body
+    # still costs bandwidth and memory. Lower bound is the usual minimum.
+    password: str = Field(..., min_length=8, max_length=128)
+    name: Optional[str] = Field(None, max_length=120)
+
+    @field_validator("password")
+    @classmethod
+    def password_not_trivial(cls, v: str) -> str:
+        if v.strip() != v:
+            raise ValueError("Password must not start or end with whitespace.")
+        if v.lower() in {"password", "12345678", "qwertyui", "11111111"}:
+            raise ValueError("That password is too common. Pick something less guessable.")
+        return v
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., max_length=128)
+
+
+class SessionResponse(BaseModel):
+    """The client's view of who it is. Never exposes the raw session id — that lives
+    only in the httpOnly cookie, so JavaScript (and any XSS) cannot read it."""
+
+    authenticated: bool
+    user_id: Optional[UUID] = None
+    email: Optional[str] = None
+    name: Optional[str] = None
+
 
 
 # Stock Schemas
@@ -45,9 +79,9 @@ class StockPriceSchema(StockPriceBase):
 
 # Portfolio Holding Schemas
 class PortfolioHoldingBase(BaseModel):
-    symbol: str
-    shares: float
-    average_buy_price: float
+    symbol: str = Field(..., min_length=1, max_length=10)
+    shares: float = Field(..., gt=0, le=1e12)
+    average_buy_price: float = Field(..., ge=0, le=1e12)
 
 
 class PortfolioHoldingCreate(PortfolioHoldingBase):
@@ -55,8 +89,8 @@ class PortfolioHoldingCreate(PortfolioHoldingBase):
 
 
 class PortfolioHoldingUpdate(BaseModel):
-    shares: float
-    average_buy_price: float
+    shares: float = Field(..., gt=0, le=1e12)
+    average_buy_price: float = Field(..., ge=0, le=1e12)
 
 
 class PortfolioHoldingSchema(PortfolioHoldingBase):
@@ -70,7 +104,6 @@ class PortfolioHoldingSchema(PortfolioHoldingBase):
 
 # Portfolio Schemas
 class PortfolioBase(BaseModel):
-    session_id: str
     name: str
 
 
@@ -349,13 +382,15 @@ class BacktestResponse(BaseModel):
 
 # Chat Schemas
 class ConversationCreate(BaseModel):
-    session_id: str
-    title: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=255)
+
+
+class ConversationUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
 
 
 class ConversationSchema(BaseModel):
     id: UUID
-    session_id: str
     title: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -369,6 +404,9 @@ class AgentTraceSchema(BaseModel):
     node: str
     status: str
     summary: Optional[str] = None
+    label: Optional[str] = None
+    rating: Optional[str] = None
+    confidence: Optional[int] = None
     started_at: datetime
     ended_at: Optional[datetime] = None
 
@@ -394,7 +432,14 @@ class ConversationDetailResponse(ConversationSchema):
 
 
 class ChatMessageCreate(BaseModel):
-    content: str = Field(..., description="Free-form natural language query, e.g. 'Should I buy Reliance right now?'")
+    # Bounded so a single request can't push an unbounded prompt into the LLM (cost)
+    # or the messages table (storage).
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description="Free-form natural language query, e.g. 'Should I buy Reliance right now?'",
+    )
 
 
 class ChatMessageCreateResponse(BaseModel):

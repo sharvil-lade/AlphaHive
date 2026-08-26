@@ -47,10 +47,49 @@
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 
+  /* Suppress the default ring only for pointer focus; keyboard users keep a visible
+     focus indicator, which `outline: none` on :focus used to remove entirely. */
   input:focus,
   select:focus,
   textarea:focus {
     outline: none;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-offset-2 ring-mutedText;
+    --tw-ring-offset-color: rgb(var(--color-background));
+  }
+}
+
+/* Respect the OS "reduce motion" setting — spinners and slide-ins included. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Sidebar: full-width drawer on mobile, hover/focus rail on desktop ──── */
+@media (min-width: 768px) {
+  .sidebar .sidebar-label {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .sidebar:hover .sidebar-label,
+  .sidebar:focus-within .sidebar-label {
+    opacity: 1;
+  }
+  /* A collapsed icon rail has no sensible way to show conversation rows. */
+  .sidebar .sidebar-recents {
+    display: none;
+  }
+  .sidebar:hover .sidebar-recents,
+  .sidebar:focus-within .sidebar-recents {
+    display: flex;
   }
 }
 
@@ -72,6 +111,10 @@
 
 /* ─── Minimal markdown prose styling for chat responses ──────── */
 @layer components {
+  .sidebar-recents {
+    display: flex;
+  }
+
   .chat-prose {
     @apply text-[15px] leading-7 text-foreground;
   }

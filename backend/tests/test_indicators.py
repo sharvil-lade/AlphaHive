@@ -5,6 +5,8 @@ from httpx import AsyncClient
 from app.main import app
 
 # Use pytest-asyncio to handle async tests
+from conftest import requires_redis
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -16,6 +18,7 @@ async def client():
         yield ac
 
 
+@requires_redis
 async def test_indicators_posture_endpoint(client):
     """Test indicators/ta endpoint, verifying calculations and scoring engine output."""
     # Query Apple technical analysis

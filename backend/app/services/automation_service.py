@@ -1,7 +1,7 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,7 +58,7 @@ class AutomationService:
         """Fetch watchlist alerts configured by the user."""
         stmt = select(Alert).where(Alert.session_id == session_id)
         if active_only:
-            stmt = stmt.where(Alert.is_active == True)
+            stmt = stmt.where(Alert.is_active.is_(True))
         stmt = stmt.order_by(Alert.created_at.desc())
         result = await db.execute(stmt)
         return list(result.scalars().all())
@@ -97,7 +97,7 @@ class AutomationService:
     # Evaluation Engine
     async def check_alerts(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """Check all active alert thresholds, evaluate satisfied triggers, and deactivate them."""
-        stmt = select(Alert).where(Alert.is_active == True)
+        stmt = select(Alert).where(Alert.is_active.is_(True))
         result = await db.execute(stmt)
         active_alerts = result.scalars().all()
         

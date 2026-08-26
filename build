@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# Alpha Hive — one entry point for the whole stack.
+#
+#   ./build              setup if needed, then run everything (default)
+#   ./build setup        install deps + run migrations, don't start anything
+#   ./build services     start Redis + Qdrant only
+#   ./build test         run the backend suite and the frontend typecheck
+#   ./build stop         stop the Docker services
+#
+# On Windows run it from Git Bash: ./build
+#
+# Postgres is NOT started locally — the app points at Supabase via DATABASE_URL.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+
+# Colour only when stdout is a terminal that renders it. Windows PowerShell 5.1
+# cannot, and sets NO_COLOR on our behalf (see build.ps1).
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RESET=$'\033[0m'
+else
+  BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; RESET=""
+fi
+say()  { printf "%s==>%s %s\n" "$BOLD" "$RESET" "$*"; }
+warn() { printf "%s warn%s %s\n" "$YELLOW" "$RESET" "$*"; }
+die()  { printf "%serror%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
+
+# Windows venvs put executables in Scripts/, POSIX in bin/.
+if [ -d "backend/.venv/Scripts" ]; then VENV_BIN="backend/.venv/Scripts"; else VENV_BIN="backend/.venv/bin"; fi
+PY="$VENV_BIN/python"
+
+# ── Preflight ────────────────────────────────────────────────────────────────
+
+check_env() {
+  [ -f .env ] || die ".env not found. Copy it from .env.example and fill in your keys."
+  grep -q '^SECRET_KEY=' .env || die "SECRET_KEY missing from .env. Generate one:
+    python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+  grep -q '^DATABASE_URL=' .env || warn "DATABASE_URL not set in .env — falling back to POSTGRES_* parts."
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+port_open() {
+  # Redis/Qdrant reachability without needing nc installed.
+  "$PY" - "$1" <<'PYEOF' 2>/dev/null
+import socket, sys
+s = socket.socket(); s.settimeout(1)
+try:
+    s.connect(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+PYEOF
+}
+
+# ── Steps ────────────────────────────────────────────────────────────────────
+
+degraded_note() {
+  warn "  Redis missing  -> chat streaming, rate limiting and the usage budget stop working."
+  warn "  Qdrant missing -> SEC filing search is unavailable (everything else is fine)."
+  warn "Start them yourself on 6379/6333, or start Docker and re-run."
+}
+
+services() {
+  # Already up (started by hand, or a previous run)? Nothing to do.
+  if port_open 6379 && port_open 6333; then
+    say "Redis + Qdrant already running"
+    return 0
+  fi
+
+  if ! have docker; then
+    warn "Docker not found."
+    degraded_note
+    return 0
+  fi
+
+  # The CLI existing says nothing about the daemon: with Docker Desktop stopped,
+  # `docker` runs fine and every command fails on the named pipe.
+  if ! docker info >/dev/null 2>&1; then
+    warn "Docker is installed but the daemon isn't reachable — start Docker Desktop."
+    degraded_note
+    return 0
+  fi
+
+  say "Starting Redis + Qdrant"
+  # Never abort the whole run on this: the app is still useful without Qdrant, and a
+  # clear warning beats a dead script.
+  docker compose up -d redis qdrant || { warn "Could not start the containers."; degraded_note; }
+}
+
+setup() {
+  check_env
+
+  if [ ! -d backend/.venv ]; then
+    say "Creating backend virtualenv"
+    have python || die "python not found on PATH."
+    (cd backend && python -m venv .venv)
+  fi
+
+  say "Installing backend dependencies"
+  "$PY" -m pip install --quiet --upgrade pip
+  "$PY" -m pip install --quiet -r backend/requirements.txt
+
+  say "Running database migrations (Supabase)"
+  (cd backend && "../$VENV_BIN/python" -m alembic -c alembic.ini upgrade head)
+
+  if [ ! -d frontend/node_modules ]; then
+    say "Installing frontend dependencies"
+    (cd frontend && npm install)
+  fi
+
+  printf "%s✓%s setup complete\n" "$GREEN" "$RESET"
+}
+
+dev() {
+  services
+  say "Backend  http://localhost:8000${DIM} (docs at /docs)${RESET}"
+  say "Frontend http://localhost:3000"
+  echo "${DIM}Ctrl-C stops both.${RESET}"
+
+  # One trap kills the whole process group, so Ctrl-C doesn't leave uvicorn or the
+  # Next dev server orphaned holding ports 8000/3000.
+  trap 'kill 0 2>/dev/null' EXIT INT TERM
+
+  (cd backend && "../$VENV_BIN/python" -m uvicorn app.main:app --port 8000 --reload) &
+  (cd frontend && npm run dev) &
+  wait
+}
+
+tests() {
+  say "Backend tests"
+  (cd backend && "../$VENV_BIN/python" -m pytest -q -p no:warnings)
+  say "Frontend typecheck"
+  (cd frontend && npx tsc --noEmit)
+  say "Frontend lint"
+  (cd frontend && npm run lint)
+  printf "%s✓%s all checks passed\n" "$GREEN" "$RESET"
+}
+
+case "${1:-all}" in
+  all)
+    check_env
+    # Only run the (slow) install step when something is actually missing.
+    if [ ! -d backend/.venv ] || [ ! -d frontend/node_modules ]; then setup; fi
+    dev
+    ;;
+  setup)    setup ;;
+  services) services ;;
+  dev)      check_env; dev ;;
+  test)     check_env; tests ;;
+  stop)     say "Stopping services"; docker compose down ;;
+  *)        die "Unknown command '$1'. Try: setup | services | dev | test | stop" ;;
+esac

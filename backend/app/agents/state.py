@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Dict, Any, Optional, Annotated
+from typing import TypedDict, List, Dict, Any, Annotated
 
 def append_logs(left: List[Dict[str, Any]], right: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Safe parallel reducer appending execution logs without overwriting."""

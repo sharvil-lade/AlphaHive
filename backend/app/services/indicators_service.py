@@ -1,7 +1,6 @@
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 import pandas as pd
-import numpy as np
 
 from app.services.stock_service import stock_service
 

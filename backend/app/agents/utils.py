@@ -15,6 +15,16 @@ def get_redis() -> Redis:
         redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
     return redis_client
 
+async def redis_available() -> bool:
+    """Chat streaming reads and writes exclusively through Redis, so without it a run
+    starts, produces nothing, and the client spins forever. Callers use this to fail
+    fast with a real error instead."""
+    try:
+        return bool(await get_redis().ping())
+    except Exception:
+        return False
+
+
 async def log_agent_activity(
     run_id: str,
     node: str,

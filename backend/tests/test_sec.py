@@ -1,21 +1,13 @@
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient
 
-from app.main import app
 
-# Use pytest-asyncio to handle async tests
+from conftest import requires_qdrant
+
 pytestmark = pytest.mark.asyncio
 
 
-@pytest_asyncio.fixture
-async def client():
-    from httpx import ASGITransport
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
 
-
+@requires_qdrant
 async def test_sec_indexing_endpoint(client):
     """Test POST /sec/index endpoint, verifying file downloading, chunking, and Qdrant upserts."""
     # Index Apple 10-K (triggers download + mock fallbacks + Qdrant upload)
@@ -29,6 +21,7 @@ async def test_sec_indexing_endpoint(client):
     assert data["chunks_indexed"] > 0
 
 
+@requires_qdrant
 async def test_sec_query_rag_endpoint(client):
     """Test GET /sec/query endpoint, verifying semantic chunk matches and payload metadata."""
     # First, make sure TSLA is indexed

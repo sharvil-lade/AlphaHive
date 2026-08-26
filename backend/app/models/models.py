@@ -22,6 +22,26 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    """A signed-up account.
+
+    `session_id` is the join to every other table: the app partitions all user data by
+    session id, and an account simply *owns* one. Signing up while anonymous adopts the
+    visitor's existing session id, so their portfolio and chat history carry over.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    session_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Stock(Base):
     __tablename__ = "stocks"
 
@@ -204,6 +224,10 @@ class AgentTrace(Base):
     node: Mapped[str] = mapped_column(String(50))  # router, fundamentals, technical, news_sentiment, risk, synthesis
     status: Mapped[str] = mapped_column(String(20), default="running")  # running, completed, failed
     summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Verdict fields — populated from the agent-verdict SSE events when a run finishes.
+    label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    rating: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

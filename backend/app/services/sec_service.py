@@ -1,6 +1,5 @@
 import logging
 import httpx
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger("sec-service")
 

@@ -11,6 +11,17 @@ from app.models.models import Conversation, Message, AgentTrace
 
 logger = logging.getLogger("chat-service")
 
+_TITLE_MAX = 60
+
+
+def _derive_title(content: str) -> str:
+    """First line of the message, cut at a word boundary."""
+    first_line = content.strip().splitlines()[0] if content.strip() else "New conversation"
+    if len(first_line) <= _TITLE_MAX:
+        return first_line
+    cut = first_line[:_TITLE_MAX].rsplit(" ", 1)[0]
+    return f"{cut or first_line[:_TITLE_MAX]}…"
+
 
 class ChatService:
     """Owns all persistence for Conversation/Message/AgentTrace.
@@ -29,12 +40,17 @@ class ChatService:
             await session.commit()
             return conv
 
-    async def list_conversations(self, session_id: str) -> List[Conversation]:
+    async def list_conversations(
+        self, session_id: str, limit: int = 50, offset: int = 0
+    ) -> List[Conversation]:
+        """Most-recently-updated first, paginated."""
         async with AsyncSessionLocal() as session:
             stmt = (
                 select(Conversation)
                 .where(Conversation.session_id == session_id)
                 .order_by(Conversation.updated_at.desc())
+                .limit(limit)
+                .offset(offset)
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -64,7 +80,7 @@ class ChatService:
             if conv:
                 conv.updated_at = datetime.utcnow()
                 if not conv.title and role == "user":
-                    conv.title = content[:80]
+                    conv.title = _derive_title(content)
 
             await session.commit()
             return msg
@@ -91,21 +107,33 @@ class ChatService:
                     msg.status = status
                 await session.commit()
 
-    async def start_trace(self, message_id: UUID, node: str) -> AgentTrace:
+    async def record_trace(
+        self,
+        message_id: UUID,
+        node: str,
+        status: str,
+        summary: Optional[str] = None,
+        label: Optional[str] = None,
+        rating: Optional[str] = None,
+        confidence: Optional[int] = None,
+    ) -> AgentTrace:
+        """Write one node's finished trace, verdict included. Traces are only ever
+        persisted after a run, from the Redis event log, so there is no running row to
+        update."""
         async with AsyncSessionLocal() as session:
-            trace = AgentTrace(message_id=message_id, node=node, status="running")
+            trace = AgentTrace(
+                message_id=message_id,
+                node=node,
+                status=status,
+                summary=summary,
+                label=label,
+                rating=rating,
+                confidence=confidence,
+                ended_at=datetime.utcnow(),
+            )
             session.add(trace)
             await session.commit()
             return trace
-
-    async def end_trace(self, trace_id: UUID, status: str, summary: Optional[str] = None) -> None:
-        async with AsyncSessionLocal() as session:
-            trace = await session.get(AgentTrace, trace_id)
-            if trace:
-                trace.status = status
-                trace.summary = summary
-                trace.ended_at = datetime.utcnow()
-                await session.commit()
 
 
 chat_service = ChatService()

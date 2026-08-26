@@ -1,30 +1,21 @@
 import asyncio
-import pytest
-import pytest_asyncio
-from httpx import AsyncClient
-from uuid import UUID
 
-from app.main import app
+import pytest
+
+from conftest import requires_redis
 
 pytestmark = pytest.mark.asyncio
 
 
-@pytest_asyncio.fixture
-async def client():
-    from httpx import ASGITransport
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
 
-
+@requires_redis
 async def test_agent_run_execution_pipeline(client):
     """Test POST /agents/run to trigger workflow, and poll details until completed."""
     # 1. Trigger agent run
-    resp = await client.post("/api/v1/agents/run?symbol=NVDA&session_id=test_integration_session")
+    resp = await client.post("/api/v1/agents/run?symbol=NVDA")
     assert resp.status_code == 201
     run_data = resp.json()
     
-    assert run_data["session_id"] == "test_integration_session"
     assert run_data["ticker"] == "NVDA"
     assert "id" in run_data
     assert run_data["status"] == "running"
@@ -53,7 +44,7 @@ async def test_agent_run_execution_pipeline(client):
     logs = details["logs"]
     assert len(logs) > 0
     # Verify we got logs from multiple parallel workers
-    nodes_logged = {l["node"] for l in logs}
+    nodes_logged = {entry["node"] for entry in logs}
     assert "orchestrator" in nodes_logged
     assert "research" in nodes_logged
     assert "technical" in nodes_logged

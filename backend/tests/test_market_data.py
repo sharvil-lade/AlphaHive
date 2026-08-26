@@ -1,26 +1,15 @@
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.main import app
-from app.core.config import settings
-from app.db.session import get_db
 from app.models.models import Stock, StockPrice
 
-# Use pytest-asyncio to handle async tests
+from conftest import requires_qdrant, requires_redis
+
 pytestmark = pytest.mark.asyncio
 
 
-@pytest_asyncio.fixture
-async def client():
-    from httpx import ASGITransport
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
 
-
+@requires_qdrant
 async def test_health_check(client):
     """Test deep integration health check endpoint."""
     resp = await client.get("/api/v1/health")
@@ -32,6 +21,7 @@ async def test_health_check(client):
     assert "connected" in data["qdrant"]
 
 
+@requires_redis
 async def test_stock_quote_endpoints(client):
     """Test real-time quote retrieval (Finnhub & yfinance fallback)."""
     # Query Apple
@@ -45,6 +35,7 @@ async def test_stock_quote_endpoints(client):
     assert "source" in data
 
 
+@requires_redis
 async def test_company_profile_endpoints(client):
     """Test company profile fetching and PostgreSQL upsert."""
     resp = await client.get("/api/v1/stocks/profile?symbol=AAPL")
@@ -69,6 +60,7 @@ async def test_company_profile_endpoints(client):
         assert stock_record.name != ""
 
 
+@requires_redis
 async def test_historical_ohlcv_endpoints(client):
     """Test historical daily chart loading and PostgreSQL upserting."""
     resp = await client.get("/api/v1/stocks/history?symbol=MSFT&range_str=1mo")

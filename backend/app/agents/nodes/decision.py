@@ -195,7 +195,7 @@ News headlines and Reddit sentiment returned an aggregated rating of **{sent_rat
 * **Identified Catalysts:**
   {" ".join(f"- {op}" for op in sentiment.get('opportunities', []))}
 * **Identified Vulnerabilities:**
-  {" ".join(f"- th" for th in sentiment.get('threats', []))}
+  {" ".join("- th" for th in sentiment.get('threats', []))}
 
 ---
 

@@ -2,7 +2,7 @@ import json
 import logging
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from fastapi import HTTPException
 from httpx import AsyncClient
 
@@ -11,6 +11,7 @@ from app.core.rate_limiter import RateLimiter
 from app.core.logging_config import configure_logging, JSONFormatter
 from app.core.config import settings
 from app.services.token_budget_service import TokenBudgetService
+from conftest import requires_redis
 
 
 @pytest_asyncio.fixture
@@ -39,25 +40,44 @@ async def test_rate_limiter_unit(monkeypatch):
     monkeypatch.delenv("TESTING", raising=False)
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 
-    limiter = RateLimiter(requests_per_minute=5)
+    limiter = RateLimiter(requests_per_minute=5, name="unit")
 
-    # Mock Redis client
     mock_redis = AsyncMock()
-    # 6th request triggers rate limit (limit is 5)
-    mock_redis.incr.return_value = 6
+    mock_redis.incr.return_value = 6  # 6th request in the window, limit is 5
+    mock_redis.ttl.return_value = 42
     limiter.redis = mock_redis
 
-    # Mock FastAPI Request
-    mock_request = AsyncMock()
+    mock_request = MagicMock()
+    mock_request.headers = {}
     mock_request.client.host = "1.2.3.4"
 
     with pytest.raises(HTTPException) as exc_info:
         await limiter(mock_request)
 
     assert exc_info.value.status_code == 429
-    assert "Rate limit exceeded" in exc_info.value.detail
+    assert exc_info.value.headers["Retry-After"] == "42"
 
 
+async def test_rate_limiter_buckets_are_namespaced_per_limiter():
+    """Two limiters must not drain the same counter, or the tightest limit silently
+    applies to every endpoint."""
+    from app.core.rate_limiter import limit_10_per_min, limit_60_per_min
+
+    assert limit_10_per_min.name != limit_60_per_min.name
+
+
+async def test_rate_limiter_prefers_the_forwarded_client_ip(monkeypatch):
+    """Behind a proxy, every user would otherwise share one bucket."""
+    from app.core.rate_limiter import client_ip
+
+    monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
+    request = MagicMock()
+    request.headers = {"x-forwarded-for": "203.0.113.9, 10.0.0.1"}
+    request.client.host = "10.0.0.1"
+    assert client_ip(request) == "203.0.113.9"
+
+
+@requires_redis
 async def test_token_budget_tracking():
     """Test token budget service counting and threshold checks."""
     import uuid
