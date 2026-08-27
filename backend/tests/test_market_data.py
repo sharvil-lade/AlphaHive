@@ -1,24 +1,21 @@
 import pytest
+from conftest import requires_redis
 from sqlalchemy.future import select
 
 from app.models.models import Stock, StockPrice
 
-from conftest import requires_qdrant, requires_redis
-
 pytestmark = pytest.mark.asyncio
 
 
-
-@requires_qdrant
+@requires_redis
 async def test_health_check(client):
-    """Test deep integration health check endpoint."""
+    """The deep readiness probe reports every backing service it depends on."""
     resp = await client.get("/api/v1/health")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "healthy"
     assert "connected" in data["postgres"]
     assert "connected" in data["redis"]
-    assert "connected" in data["qdrant"]
 
 
 @requires_redis
@@ -48,10 +45,12 @@ async def test_company_profile_endpoints(client):
 
     # Wait for FastAPI to release database connection back to pool
     import asyncio
+
     await asyncio.sleep(0.2)
 
     # Verify record was upserted in PostgreSQL database
     from app.db.session import AsyncSessionLocal
+
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(Stock).where(Stock.symbol == "AAPL"))
         stock_record = res.scalar_one_or_none()
@@ -68,7 +67,7 @@ async def test_historical_ohlcv_endpoints(client):
     data = resp.json()
     assert isinstance(data, list)
     assert len(data) > 0
-    
+
     first_bar = data[0]
     assert "open" in first_bar
     assert "high" in first_bar
@@ -79,10 +78,12 @@ async def test_historical_ohlcv_endpoints(client):
 
     # Wait for FastAPI to release database connection back to pool
     import asyncio
+
     await asyncio.sleep(0.2)
 
     # Verify records were written into stock_prices table
     from app.db.session import AsyncSessionLocal
+
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(StockPrice).where(StockPrice.symbol == "MSFT"))
         prices = res.scalars().all()

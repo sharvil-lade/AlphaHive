@@ -19,7 +19,7 @@ Every parser returns the same normalized shape:
 import csv
 import io
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 import httpx
 
@@ -29,9 +29,27 @@ GROWW_HOLDINGS_URL = "https://api.groww.in/v1/holdings/user"
 
 # Header aliases we accept in an uploaded CSV/XLSX, lower-cased. Groww's own
 # exports and common community exports use varying names for the same column.
-_SYMBOL_KEYS = {"symbol", "trading_symbol", "tradingsymbol", "stock", "stock name", "scrip", "instrument", "company"}
+_SYMBOL_KEYS = {
+    "symbol",
+    "trading_symbol",
+    "tradingsymbol",
+    "stock",
+    "stock name",
+    "scrip",
+    "instrument",
+    "company",
+}
 _QTY_KEYS = {"quantity", "qty", "shares", "net quantity", "holding quantity", "units"}
-_AVG_KEYS = {"average_price", "average price", "avg price", "avg. price", "avg cost", "buy average", "average buy price", "avg buy price"}
+_AVG_KEYS = {
+    "average_price",
+    "average price",
+    "avg price",
+    "avg. price",
+    "avg cost",
+    "buy average",
+    "average buy price",
+    "avg buy price",
+}
 
 
 class GrowwImportError(Exception):
@@ -39,7 +57,7 @@ class GrowwImportError(Exception):
 
 
 class GrowwService:
-    async def fetch_holdings_via_api(self, access_token: str) -> List[Dict[str, Any]]:
+    async def fetch_holdings_via_api(self, access_token: str) -> list[dict[str, Any]]:
         """Fetch live holdings from the official Groww Trade API using a user's
         access token. Returns normalized holdings. Raises GrowwImportError on
         auth/HTTP failure."""
@@ -93,7 +111,7 @@ class GrowwService:
         return holdings
 
     @staticmethod
-    def _extract_rows(payload: Any) -> List[Dict[str, Any]]:
+    def _extract_rows(payload: Any) -> list[dict[str, Any]]:
         if isinstance(payload, list):
             return payload
         if isinstance(payload, dict):
@@ -107,7 +125,7 @@ class GrowwService:
                         return inner
         return []
 
-    def parse_holdings_file(self, filename: str, content: bytes) -> List[Dict[str, Any]]:
+    def parse_holdings_file(self, filename: str, content: bytes) -> list[dict[str, Any]]:
         """Parse an uploaded Groww holdings export (CSV or XLSX) into normalized
         holdings. Raises GrowwImportError if no usable rows are found."""
         name = (filename or "").lower()
@@ -125,7 +143,7 @@ class GrowwService:
         return holdings
 
     @staticmethod
-    def _read_csv_rows(content: bytes) -> List[Dict[str, str]]:
+    def _read_csv_rows(content: bytes) -> list[dict[str, str]]:
         text = content.decode("utf-8-sig", errors="replace")
         # Groww exports sometimes have preamble lines before the header row; find the
         # line that looks like a header (contains a symbol-ish and a quantity-ish token).
@@ -140,7 +158,7 @@ class GrowwService:
         return [dict(r) for r in reader]
 
     @staticmethod
-    def _read_excel_rows(content: bytes) -> List[Dict[str, str]]:
+    def _read_excel_rows(content: bytes) -> list[dict[str, str]]:
         try:
             from openpyxl import load_workbook
         except ImportError as e:  # pragma: no cover
@@ -162,12 +180,12 @@ class GrowwService:
                 break
         headers = [str(c).strip() for c in grid[header_idx]]
         rows = []
-        for row in grid[header_idx + 1:]:
+        for row in grid[header_idx + 1 :]:
             rows.append({headers[j]: row[j] for j in range(min(len(headers), len(row)))})
         return rows
 
     @classmethod
-    def _rows_to_holdings(cls, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _rows_to_holdings(cls, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         holdings = []
         for row in rows:
             norm = {str(k).strip().lower(): v for k, v in row.items() if k is not None}
@@ -189,7 +207,7 @@ class GrowwService:
         return holdings
 
     @staticmethod
-    def _pick(norm: Dict[str, Any], keys: set) -> Any:
+    def _pick(norm: dict[str, Any], keys: set) -> Any:
         for k in keys:
             if k in norm and norm[k] not in (None, ""):
                 return norm[k]

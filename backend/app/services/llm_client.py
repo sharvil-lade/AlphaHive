@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
 
@@ -39,7 +39,8 @@ class LLMClient:
     """
 
     def __init__(self):
-        self._client: Optional[AsyncOpenAI] = None
+        self._client: AsyncOpenAI | None = None
+        self._embeddings_disabled = False
         if settings.LITELLM_BASE_URL and settings.LITELLM_API_KEY:
             self._client = AsyncOpenAI(
                 base_url=settings.LITELLM_BASE_URL,
@@ -59,10 +60,10 @@ class LLMClient:
         messages: list[dict],
         *,
         json_mode: bool = False,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         timeout: float = 20.0,
-        model: Optional[str] = None,
-    ) -> Optional[LLMResult]:
+        model: str | None = None,
+    ) -> LLMResult | None:
         if not self._client:
             return None
 
@@ -97,13 +98,34 @@ class LLMClient:
 
         return None
 
+    async def embed(self, texts: list[str]) -> list[list[float]] | None:
+        """Embed a batch of texts, or None if embeddings aren't available.
+
+        Returns None (never raises) when no proxy or no EMBEDDING_MODEL is configured,
+        and latches `_embeddings_disabled` on the first failure — many LiteLLM keys
+        have no embedding-model access, and retrying just yields a 401 per chunk.
+        Callers fall back to keyword search.
+        """
+        if not self._client or not settings.EMBEDDING_MODEL or self._embeddings_disabled:
+            return None
+        try:
+            response = await self._client.embeddings.create(model=settings.EMBEDDING_MODEL, input=texts)
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            logger.warning(
+                f"Embedding model '{settings.EMBEDDING_MODEL}' unavailable ({e}); "
+                "falling back to keyword search for the rest of this process."
+            )
+            self._embeddings_disabled = True
+            return None
+
     async def stream(
         self,
         messages: list[dict],
         *,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         timeout: float = 60.0,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> AsyncIterator[str]:
         """Streams text deltas from the requested model (LLM_MODEL_PRIMARY by default,
         or `model=` for a different tier, e.g. LLM_MODEL_SYNTHESIS) only.

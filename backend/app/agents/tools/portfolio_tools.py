@@ -39,9 +39,7 @@ async def get_user_portfolio(session_id: str) -> str:
             "gain_loss": round(summary.get("gain_loss", 0.0), 2),
             "gain_loss_percentage": round(summary.get("gain_loss_percentage", 0.0), 2),
             "weighted_beta": round(summary.get("weighted_beta", 0.0), 3),
-            "sector_weights": {
-                k: round(v, 1) for k, v in (summary.get("sector_weights") or {}).items()
-            },
+            "sector_weights": {k: round(v, 1) for k, v in (summary.get("sector_weights") or {}).items()},
             "holdings": [
                 {
                     "symbol": h["symbol"],

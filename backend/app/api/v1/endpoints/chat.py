@@ -1,14 +1,13 @@
 import asyncio
 import json
 import logging
-from typing import Dict, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.utils import get_redis, emit_chat_event, redis_available
+from app.agents.utils import emit_chat_event, get_redis, redis_available
 from app.core.deps import (
     Principal,
     get_principal,
@@ -16,6 +15,7 @@ from app.core.deps import (
     owned_message,
     require_principal,
 )
+from app.core.rate_limiter import limit_10_per_min
 from app.db.session import get_db
 from app.models.models import Conversation, Message
 from app.schemas.schemas import (
@@ -26,7 +26,6 @@ from app.schemas.schemas import (
     ConversationSchema,
     ConversationUpdate,
 )
-from app.core.rate_limiter import limit_10_per_min
 from app.services.chat_service import chat_service
 
 router = APIRouter()
@@ -34,7 +33,7 @@ logger = logging.getLogger("chat-api")
 
 # In-flight runs by assistant message id. Holding the task handle (rather than using
 # BackgroundTasks) is what lets /stop actually cancel the next LLM call.
-_running_runs: Dict[UUID, asyncio.Task] = {}
+_running_runs: dict[UUID, asyncio.Task] = {}
 
 
 async def _persist_run_artifacts(message_id: UUID) -> None:
@@ -44,8 +43,8 @@ async def _persist_run_artifacts(message_id: UUID) -> None:
         redis = get_redis()
         raw_events = await redis.lrange(f"chat_events:{message_id}", 0, -1)
 
-        node_status: Dict[str, str] = {}
-        verdicts: Dict[str, dict] = {}
+        node_status: dict[str, str] = {}
+        verdicts: dict[str, dict] = {}
         for raw in raw_events:
             try:
                 event = json.loads(raw)
@@ -119,7 +118,9 @@ async def execute_chat_workflow(assistant_message_id: UUID, session_id: str, que
         if not content:
             content = "Sorry, I couldn't generate a response for that. Please try rephrasing your question."
         await chat_service.update_message(assistant_message_id, content=content, status="completed")
-        await emit_chat_event(assistant_message_id, {"type": "done", "status": "completed", "content": content})
+        await emit_chat_event(
+            assistant_message_id, {"type": "done", "status": "completed", "content": content}
+        )
     except asyncio.CancelledError:
         # User pressed Stop. Keep whatever text already streamed rather than blanking it.
         existing = await chat_service.get_message(assistant_message_id)
@@ -148,7 +149,7 @@ async def create_conversation(
     return await chat_service.create_conversation(principal.session_id, payload.title)
 
 
-@router.get("/conversations", response_model=List[ConversationSchema])
+@router.get("/conversations", response_model=list[ConversationSchema])
 async def list_conversations(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -219,14 +220,10 @@ async def post_message(
             detail="You've hit this session's usage limit. Try again later.",
         )
 
-    user_message = await chat_service.add_message(
-        conv.id, "user", payload.content, status="completed"
-    )
+    user_message = await chat_service.add_message(conv.id, "user", payload.content, status="completed")
     assistant_message = await chat_service.add_message(conv.id, "assistant", "", status="pending")
 
-    task = asyncio.create_task(
-        execute_chat_workflow(assistant_message.id, conv.session_id, payload.content)
-    )
+    task = asyncio.create_task(execute_chat_workflow(assistant_message.id, conv.session_id, payload.content))
     _running_runs[assistant_message.id] = task
 
     return {"user_message": user_message, "assistant_message": assistant_message}
@@ -260,7 +257,7 @@ async def _give_up(message_id: UUID, reason: str) -> str:
         await chat_service.update_message(message_id, content=reason, status="failed")
     except Exception as e:
         logger.error(f"Could not mark message {message_id} failed: {e}")
-    return f'data: {json.dumps({"type": "done", "status": "failed", "content": reason})}\n\n'
+    return f"data: {json.dumps({'type': 'done', 'status': 'failed', 'content': reason})}\n\n"
 
 
 async def chat_event_generator(message_id: UUID, start_index: int = 0):

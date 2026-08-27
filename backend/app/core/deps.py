@@ -7,7 +7,6 @@ unguessable session id on first hit; signing up claims it, so nothing is lost.
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 from uuid import UUID, uuid4
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -29,8 +28,8 @@ class Principal:
     """Who is making this request. `session_id` is the data-partition key."""
 
     session_id: str
-    user_id: Optional[UUID] = None
-    email: Optional[str] = None
+    user_id: UUID | None = None
+    email: str | None = None
 
     @property
     def is_authenticated(self) -> bool:
@@ -70,7 +69,7 @@ def clear_session_cookie(response: Response) -> None:
     )
 
 
-def _principal_from_request(request: Request) -> Optional[Principal]:
+def _principal_from_request(request: Request) -> Principal | None:
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         return None
@@ -100,18 +99,14 @@ async def require_principal(request: Request) -> Principal:
     `set_cookie` on the injected response would be dropped."""
     principal = _principal_from_request(request)
     if not principal:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="No active session."
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No active session.")
     return principal
 
 
 async def require_user(principal: Principal = Depends(get_principal)) -> Principal:
     """Identity for endpoints that need a real account, not an anonymous session."""
     if not principal.is_authenticated:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to continue."
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to continue.")
     return principal
 
 

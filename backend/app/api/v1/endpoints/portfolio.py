@@ -8,13 +8,13 @@ from app.core.deps import Principal, get_principal, owned_holding
 from app.db.session import get_db
 from app.models.models import PortfolioHolding
 from app.schemas.schemas import (
-    PortfolioSchema,
-    PortfolioHoldingSchema,
-    PortfolioHoldingCreate,
-    PortfolioHoldingUpdate,
-    PortfolioSummaryResponse,
     GrowwImportRequest,
+    PortfolioHoldingCreate,
+    PortfolioHoldingSchema,
+    PortfolioHoldingUpdate,
     PortfolioImportResult,
+    PortfolioSchema,
+    PortfolioSummaryResponse,
 )
 from app.services.groww_service import GrowwImportError, groww_service
 from app.services.portfolio_service import portfolio_service
@@ -138,9 +138,7 @@ async def import_from_file(
         logger.error(f"File import parse failed: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not parse that file.")
 
-    result = await portfolio_service.import_holdings(
-        db, principal.session_id, holdings, replace=replace
-    )
+    result = await portfolio_service.import_holdings(db, principal.session_id, holdings, replace=replace)
     return {**result, "message": f"Imported {result['imported']} holdings from {filename}."}
 
 

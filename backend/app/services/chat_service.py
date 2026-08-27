@@ -1,13 +1,12 @@
 import logging
 from datetime import datetime
-from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.db.session import AsyncSessionLocal
-from app.models.models import Conversation, Message, AgentTrace
+from app.models.models import AgentTrace, Conversation, Message
 
 logger = logging.getLogger("chat-service")
 
@@ -33,7 +32,7 @@ class ChatService:
     directly to the DB).
     """
 
-    async def create_conversation(self, session_id: str, title: Optional[str] = None) -> Conversation:
+    async def create_conversation(self, session_id: str, title: str | None = None) -> Conversation:
         async with AsyncSessionLocal() as session:
             conv = Conversation(session_id=session_id, title=title)
             session.add(conv)
@@ -42,7 +41,7 @@ class ChatService:
 
     async def list_conversations(
         self, session_id: str, limit: int = 50, offset: int = 0
-    ) -> List[Conversation]:
+    ) -> list[Conversation]:
         """Most-recently-updated first, paginated."""
         async with AsyncSessionLocal() as session:
             stmt = (
@@ -55,7 +54,7 @@ class ChatService:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def get_conversation(self, conversation_id: UUID) -> Optional[Conversation]:
+    async def get_conversation(self, conversation_id: UUID) -> Conversation | None:
         async with AsyncSessionLocal() as session:
             stmt = (
                 select(Conversation)
@@ -85,18 +84,14 @@ class ChatService:
             await session.commit()
             return msg
 
-    async def get_message(self, message_id: UUID) -> Optional[Message]:
+    async def get_message(self, message_id: UUID) -> Message | None:
         async with AsyncSessionLocal() as session:
-            stmt = (
-                select(Message)
-                .where(Message.id == message_id)
-                .options(selectinload(Message.traces))
-            )
+            stmt = select(Message).where(Message.id == message_id).options(selectinload(Message.traces))
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def update_message(
-        self, message_id: UUID, content: Optional[str] = None, status: Optional[str] = None
+        self, message_id: UUID, content: str | None = None, status: str | None = None
     ) -> None:
         async with AsyncSessionLocal() as session:
             msg = await session.get(Message, message_id)
@@ -112,10 +107,10 @@ class ChatService:
         message_id: UUID,
         node: str,
         status: str,
-        summary: Optional[str] = None,
-        label: Optional[str] = None,
-        rating: Optional[str] = None,
-        confidence: Optional[int] = None,
+        summary: str | None = None,
+        label: str | None = None,
+        rating: str | None = None,
+        confidence: int | None = None,
     ) -> AgentTrace:
         """Write one node's finished trace, verdict included. Traces are only ever
         persisted after a run, from the Redis event log, so there is no running row to

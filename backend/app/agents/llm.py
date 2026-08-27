@@ -11,7 +11,6 @@ underlying model is Gemini, Claude, or GPT — swap it via env vars, no code cha
 """
 
 import logging
-from typing import Optional
 
 from langchain_openai import ChatOpenAI
 
@@ -26,7 +25,7 @@ def is_agent_llm_configured() -> bool:
 
 
 def get_chat_model(
-    model: Optional[str] = None,
+    model: str | None = None,
     *,
     temperature: float = 0.1,
     timeout: float = 60.0,

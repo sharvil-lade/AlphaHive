@@ -1,9 +1,9 @@
 import logging
-from typing import Any, Dict
+from typing import Any
 
-from app.core.config import settings
 from app.agents.state import AgentState
-from app.agents.utils import log_agent_activity, emit_chat_event
+from app.agents.utils import emit_chat_event, log_agent_activity
+from app.core.config import settings
 from app.services.llm_client import llm_client
 
 logger = logging.getLogger("synthesis-node")
@@ -19,10 +19,13 @@ def _build_analysis_prompt(state: AgentState) -> str:
     ok_findings = [f for f in findings if f.get("ok", True)]
     failed = [f.get("label", f.get("agent", "Agent")) for f in findings if not f.get("ok", True)]
 
-    findings_block = "\n\n".join(
-        f"**{f.get('label', f.get('agent', 'Agent'))} Agent:**\n{f.get('verdict', 'no verdict')}"
-        for f in ok_findings
-    ) or "No specialist verdicts were produced (their data sources were unavailable)."
+    findings_block = (
+        "\n\n".join(
+            f"**{f.get('label', f.get('agent', 'Agent'))} Agent:**\n{f.get('verdict', 'no verdict')}"
+            for f in ok_findings
+        )
+        or "No specialist verdicts were produced (their data sources were unavailable)."
+    )
 
     gap_note = (
         f"\n\nNote: the {', '.join(failed)} agent(s) could not complete (data unavailable). "
@@ -89,7 +92,7 @@ def _local_fallback_markdown(state: AgentState) -> str:
     )
 
 
-async def synthesis_node(state: AgentState) -> Dict[str, Any]:
+async def synthesis_node(state: AgentState) -> dict[str, Any]:
     """Final node in the chat graph: streams the synthesized answer to the client
     via chat SSE events, then returns the full content for persistence by the
     chat endpoint layer (this node never writes to Postgres itself)."""

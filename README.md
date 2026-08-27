@@ -119,14 +119,11 @@ Open **http://localhost:3000** and ask it something. 🎉
 `test`, and `stop` if you want to run a step on its own. Works in PowerShell,
 Git Bash, and on macOS/Linux.
 
-Postgres runs on Supabase, so nothing local. Docker is only for Redis (required)
-and Qdrant (optional — without it, just SEC filing search is unavailable).
+Postgres runs on Supabase, so nothing local. Docker is only for Redis.
 
 You can use Alpha Hive without an account. Signing up keeps whatever you've
 already done and makes it reachable from any device; **Account** lets you export
 or delete everything.
-
-Going to production? Follow **`docs/RELEASE_CHECKLIST.md`**.
 
 ---
 
@@ -139,7 +136,7 @@ Going to production? Follow **`docs/RELEASE_CHECKLIST.md`**.
 | **Backend** | FastAPI + async SQLAlchemy, streaming answers over SSE |
 | **Frontend** | Next.js 15 + React 19, Tailwind |
 | **Auth** | Email + password, signed httpOnly session cookie |
-| **Data** | Supabase Postgres (accounts, chat, portfolio) · Redis (cache, live streaming) · Qdrant (SEC filings) |
+| **Data** | Supabase Postgres — accounts, chat, portfolio, and SEC filing search via pgvector · Redis — cache, live streaming |
 | **Market data** | Yahoo/BSE (India‑first), Finnhub & Twelve Data (global), Marketaux (news) |
 
 ```
@@ -149,39 +146,43 @@ backend/app/
     chat_nodes.py  #   how each agent runs + streams its status/verdict
     graph.py       #   wires the supervisor → specialists → final answer
     tools/         #   each data source as an agent tool (the extension point)
+  api/v1/endpoints/# auth, chat, portfolio, stocks, indicators, sec, reports
   core/            # config, session identity + ownership guards, rate limiting
-  services/        # market data, news, portfolio, Groww import, LLM client
-  api/             # auth + chat + portfolio endpoints
-frontend/          # landing page, chat UI, live agent trace, portfolio, account
+  services/        # market data, news, portfolio, Groww import, LLM client, SEC index
+  models/          # SQLAlchemy tables    schemas/  # Pydantic request/response types
+  alembic/         # migrations — one per schema change, always reversible
+frontend/
+  app/             # routes: landing, chat, portfolio, account, login/signup
+  components/      # chat UI, agent trace panel, layout shell, ui primitives
+  hooks/           # useChatSession — SSE stream, resume, optimistic messages
+  services/api.ts  # the single typed client for every backend call
 ```
-
-*Watchlist, alerts, and backtesting are built but parked for a future release.*
 
 ---
 
-## Deploy on Vercel
+## Deploy
 
-The repository is configured as a Vercel Services monorepo: Next.js serves the
-frontend at `/`, and FastAPI serves the backend under `/svc/api`. Vercel Services
-is currently a private-beta feature, so your Vercel account must have access to
-it before importing this project.
+Alpha Hive deploys as **two long-running containers** (see
+[`docker-compose.yml`](docker-compose.yml)) on any Docker host — Fly.io, Render,
+Railway, a VPS. Postgres is Supabase; Redis runs alongside.
 
-1. Import the repository into Vercel and keep the project root at the repository
-   root so Vercel reads [`vercel.json`](vercel.json).
-2. Add the backend environment variables from [`.env.example`](.env.example) to
-   the Vercel project. Do not commit secrets.
-3. Set `ENVIRONMENT=production`, a strong `SECRET_KEY`, and `CORS_ORIGINS` to
-   your exact deployment URL(s) — the app refuses to boot without them. Use the
-   Supabase **transaction pooler** (port 6543) for `DATABASE_URL`.
-4. Deploy. The frontend uses `/svc/api` automatically; set
-   `NEXT_PUBLIC_API_URL` only when the backend is hosted outside this Vercel
-   deployment.
+```bash
+cp .env.example .env      # fill in DATABASE_URL, SECRET_KEY, CORS_ORIGINS, API keys
+docker compose build
+docker compose up -d
+docker compose exec backend python -m alembic -c alembic.ini upgrade head
+curl http://localhost:8000/api/v1/health
+```
 
-Vercel Functions are stateless and ephemeral. Redis, Qdrant, and long-running
-background workloads must live on managed services or another server. If Vercel
-Services is unavailable for your account, deploy
-`frontend/` as a Next.js Vercel project and `backend/` on a Python-capable host,
-then set `NEXT_PUBLIC_API_URL` to the public backend URL.
+Set `ENVIRONMENT=production`, a strong `SECRET_KEY`, and `CORS_ORIGINS` to your
+exact origin — the app refuses to boot without them. Work through
+[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) before going live.
+
+> **Not serverless.** An agent run is an in-process `asyncio` task that outlives
+> the HTTP request that started it, and the SSE stream stays open for its
+> duration. A platform that freezes the instance after a response (Vercel
+> Functions, Lambda) will kill runs mid-flight. The backend needs a process that
+> keeps running; the frontend alone would deploy anywhere.
 
 ---
 

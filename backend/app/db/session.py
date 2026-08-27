@@ -1,4 +1,5 @@
-from typing import Any, AsyncGenerator, Dict
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -17,11 +18,11 @@ def _is_transaction_pooler(url: str) -> bool:
     return ":6543" in url or "pooler.supabase.com" in url
 
 
-def engine_kwargs() -> Dict[str, Any]:
+def engine_kwargs() -> dict[str, Any]:
     """Connection settings shared by the app engine and Alembic."""
     url = settings.DATABASE_URL or ""
-    connect_args: Dict[str, Any] = {}
-    kwargs: Dict[str, Any] = {"echo": False, "future": True}
+    connect_args: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {"echo": False, "future": True}
 
     if _is_hosted(url):
         # Managed Postgres refuses plaintext. "require" encrypts without pinning a CA,

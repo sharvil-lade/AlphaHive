@@ -3,11 +3,11 @@ target-version = "py311"
 exclude = [".venv", "alembic/versions"]
 
 [lint]
-# Deliberately narrow: rules that catch real defects (undefined names, unused imports,
-# shadowed builtins, mutable defaults, except-without-raise), not formatting opinions.
-# Cosmetic rule sets (I, UP, W) would flag ~500 pre-existing lines and make CI red
-# without finding a single bug. Widen once the codebase is formatted.
-select = ["E4", "E7", "E9", "F", "B"]
+# E4/E7/E9/F/B catch real defects (undefined names, unused imports, shadowed builtins,
+# mutable defaults). I/UP/W are formatting-adjacent but now enforceable, because
+# `ruff format` runs over the whole tree in CI — they keep import order and modern
+# syntax from drifting again.
+select = ["E4", "E7", "E9", "F", "B", "I", "UP", "W"]
 ignore = [
   "B008",  # FastAPI's Depends()/Query() defaults are the framework's idiom
   "B904",  # raise ... from err inside except: worth doing, not worth blocking CI

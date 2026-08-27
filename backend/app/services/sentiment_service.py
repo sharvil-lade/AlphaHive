@@ -1,9 +1,10 @@
-import logging
 import json
-from typing import List, Dict, Any, Optional
+import logging
+from typing import Any
+
+from app.services.llm_client import llm_client
 from app.services.news_service import news_service
 from app.services.social_scraper import social_scraper
-from app.services.llm_client import llm_client
 
 logger = logging.getLogger("sentiment-service")
 
@@ -11,31 +12,29 @@ logger = logging.getLogger("sentiment-service")
 class SentimentService:
     """Service to evaluate news & social sentiment using the shared LLM client, or a local lexical fallback."""
 
-    async def analyze_sentiment(self, symbol: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    async def analyze_sentiment(self, symbol: str, session_id: str | None = None) -> dict[str, Any]:
         """Aggregate news articles and social mentions, then evaluate the unified sentiment score and summary."""
         symbol = symbol.upper()
 
-        # 1. Gather narrative sources: News and Reddit posts
         news_items = await news_service.fetch_news(symbol)
         reddit_posts = await social_scraper.fetch_reddit_posts(symbol)
 
-        # 2. Extract headlines/text to feed the parser
         headlines = [item.get("headline", "") for item in news_items if item.get("headline")]
         social_texts = [f"{post.get('title', '')} - {post.get('text', '')}" for post in reddit_posts]
 
-        # Combine text for evaluation
         combined_text = "\n".join(headlines + social_texts)
 
-        # 3. Call the LLM if the LiteLLM proxy is configured
         if llm_client.is_configured:
             llm_sentiment = await self._fetch_llm_sentiment(symbol, headlines, social_texts, session_id)
             if llm_sentiment:
                 return llm_sentiment
 
-        # 4. Fallback to Local Rule-based Lexical Analyzer
+        # No proxy, or the call failed: fall back to the local lexical analyser.
         return self._evaluate_local_sentiment(symbol, headlines, social_texts, combined_text)
 
-    async def _fetch_llm_sentiment(self, symbol: str, headlines: List[str], social_texts: List[str], session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    async def _fetch_llm_sentiment(
+        self, symbol: str, headlines: list[str], social_texts: list[str], session_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Query the LLM for structured financial sentiment evaluation."""
         prompt = (
             f"You are a professional financial hedge fund analyst. Analyze the sentiment of the following news headlines "
@@ -44,18 +43,21 @@ class SentimentService:
             "Social media posts:\n" + "\n".join(f"- {s}" for s in social_texts[:8]) + "\n\n"
             "Generate a JSON object conforming exactly to this structure:\n"
             "{\n"
-            "  \"score\": <integer between -100 (highly bearish) and 100 (highly bullish)>,\n"
-            "  \"rating\": <\"BUY\", \"HOLD\", or \"SELL\">,\n"
-            "  \"summary\": <brief 2-3 sentence executive synthesis summary of the narrative sentiment>,\n"
-            "  \"opportunities\": [<string list of 2-3 key opportunities or positive catalysts mentioned>],\n"
-            "  \"threats\": [<string list of 2-3 key risks or threats mentioned>]\n"
+            '  "score": <integer between -100 (highly bearish) and 100 (highly bullish)>,\n'
+            '  "rating": <"BUY", "HOLD", or "SELL">,\n'
+            '  "summary": <brief 2-3 sentence executive synthesis summary of the narrative sentiment>,\n'
+            '  "opportunities": [<string list of 2-3 key opportunities or positive catalysts mentioned>],\n'
+            '  "threats": [<string list of 2-3 key risks or threats mentioned>]\n'
             "}\n"
             "Ensure the response is valid JSON only."
         )
 
         result = await llm_client.complete(
             messages=[
-                {"role": "system", "content": "You are a professional financial analytics tool returning strictly structured JSON output."},
+                {
+                    "role": "system",
+                    "content": "You are a professional financial analytics tool returning strictly structured JSON output.",
+                },
                 {"role": "user", "content": prompt},
             ],
             json_mode=True,
@@ -81,27 +83,67 @@ class SentimentService:
             logger.error(f"Failed to parse LLM sentiment response: {e}")
             return None
 
-    def _evaluate_local_sentiment(self, symbol: str, headlines: List[str], social_texts: List[str], combined_text: str) -> Dict[str, Any]:
+    def _evaluate_local_sentiment(
+        self, symbol: str, headlines: list[str], social_texts: list[str], combined_text: str
+    ) -> dict[str, Any]:
         """Perform heuristic lexical analysis on aggregated text, yielding structured fallbacks."""
         text = combined_text.lower()
 
-        # Simple financial lexicons
         pos_words = [
-            "bullish", "beat", "upgrade", "buy", "growth", "momentum", "positive", "strong", "gain",
-            "exceed", "outperform", "profit", "record", "support", "demand", "catalyst", "optimistic",
-            "win", "success", "robust", "high", "accumulate"
+            "bullish",
+            "beat",
+            "upgrade",
+            "buy",
+            "growth",
+            "momentum",
+            "positive",
+            "strong",
+            "gain",
+            "exceed",
+            "outperform",
+            "profit",
+            "record",
+            "support",
+            "demand",
+            "catalyst",
+            "optimistic",
+            "win",
+            "success",
+            "robust",
+            "high",
+            "accumulate",
         ]
 
         neg_words = [
-            "bearish", "miss", "downgrade", "sell", "decline", "drop", "loss", "cut", "negative", "weak",
-            "short", "threat", "risk", "headwind", "drawdown", "compress", "caution", "headwinds", "war",
-            "pressure", "dilution", "sluggish", "expensive", "concern"
+            "bearish",
+            "miss",
+            "downgrade",
+            "sell",
+            "decline",
+            "drop",
+            "loss",
+            "cut",
+            "negative",
+            "weak",
+            "short",
+            "threat",
+            "risk",
+            "headwind",
+            "drawdown",
+            "compress",
+            "caution",
+            "headwinds",
+            "war",
+            "pressure",
+            "dilution",
+            "sluggish",
+            "expensive",
+            "concern",
         ]
 
         pos_count = sum(text.count(word) for word in pos_words)
         neg_count = sum(text.count(word) for word in neg_words)
 
-        # Quantitative scoring math
         total = pos_count + neg_count
         if total > 0:
             raw_score = (pos_count - neg_count) / total
@@ -110,10 +152,8 @@ class SentimentService:
         else:
             score = 0
 
-        # Bound score
         score = max(-100, min(100, score))
 
-        # Assign ratings based on score bounds
         if score >= 20:
             rating = "BUY"
         elif score <= -20:

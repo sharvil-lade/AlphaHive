@@ -8,8 +8,8 @@ session table, so rotating `SECRET_KEY` revokes every session.
 import base64
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import bcrypt
 import jwt
@@ -38,9 +38,9 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def encode_session(session_id: str, user_id: Optional[str] = None, email: Optional[str] = None) -> str:
-    now = datetime.now(timezone.utc)
-    payload: Dict[str, Any] = {
+def encode_session(session_id: str, user_id: str | None = None, email: str | None = None) -> str:
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
         "sid": session_id,
         "iat": now,
         "exp": now + timedelta(days=settings.SESSION_TTL_DAYS),
@@ -51,7 +51,7 @@ def encode_session(session_id: str, user_id: Optional[str] = None, email: Option
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=_ALGORITHM)
 
 
-def decode_session(token: str) -> Optional[Dict[str, Any]]:
+def decode_session(token: str) -> dict[str, Any] | None:
     """Return the token payload, or None if it is expired, forged, or malformed."""
     try:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[_ALGORITHM])

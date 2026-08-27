@@ -1,4 +1,5 @@
 import asyncio
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -11,6 +12,7 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def client():
     from httpx import ASGITransport
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -24,7 +26,7 @@ async def test_reports_history_and_download_endpoints(client):
     assert post_resp.status_code == 201
     run_data = post_resp.json()
     run_id = run_data["id"]
-    
+
     # 2. Wait for background task to write postgres rows
     completed = False
     for _ in range(30):
@@ -35,15 +37,15 @@ async def test_reports_history_and_download_endpoints(client):
             completed = True
             break
         await asyncio.sleep(0.5)
-        
+
     assert completed, "Agent execution timed out during report test."
     assert details["status"] == "completed"
-    
+
     # 3. Test reports history lookup
     hist_resp = await client.get(f"/api/v1/reports/history?session_id={session_id}")
     assert hist_resp.status_code == 200
     history_items = hist_resp.json()
-    
+
     assert len(history_items) > 0
     item = history_items[0]
     assert item["run_id"] == run_id
@@ -51,7 +53,7 @@ async def test_reports_history_and_download_endpoints(client):
     assert item["status"] == "completed"
     assert "recommendation" in item
     assert "confidence_score" in item
-    
+
     # 4. Test Markdown download endpoint
     md_resp = await client.get(f"/api/v1/reports/{run_id}/markdown")
     assert md_resp.status_code == 200
@@ -59,13 +61,13 @@ async def test_reports_history_and_download_endpoints(client):
     assert "attachment" in md_resp.headers["content-disposition"]
     assert "Investment_Memo_AAPL" in md_resp.headers["content-disposition"]
     assert len(md_resp.content) > 0
-    
+
     # 5. Test PDF download endpoint (verifies xhtml2pdf compile)
     pdf_resp = await client.get(f"/api/v1/reports/{run_id}/pdf")
     assert pdf_resp.status_code == 200
     assert pdf_resp.headers["content-type"] == "application/pdf"
     assert "attachment" in pdf_resp.headers["content-disposition"]
     assert "Investment_Memo_AAPL" in pdf_resp.headers["content-disposition"]
-    
+
     # Verify PDF magic bytes
     assert pdf_resp.content.startswith(b"%PDF-")

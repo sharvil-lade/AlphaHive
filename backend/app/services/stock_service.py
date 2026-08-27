@@ -1,7 +1,8 @@
 import datetime
 import json
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 import httpx
 from redis.asyncio import Redis
 
@@ -14,10 +15,33 @@ logger = logging.getLogger("stock-service")
 # router node (chat query understanding) is the primary source of market hints;
 # this is a lightweight heuristic for direct API/ticker-only callers.
 INDIAN_TICKER_HINTS = {
-    "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "HINDUNILVR",
-    "ITC", "BHARTIARTL", "KOTAKBANK", "LT", "AXISBANK", "ASIANPAINT", "MARUTI",
-    "SUNPHARMA", "TITAN", "WIPRO", "ULTRACEMCO", "NESTLEIND", "BAJFINANCE",
-    "HCLTECH", "ADANIENT", "TATAMOTORS", "TATASTEEL", "ONGC", "NTPC", "POWERGRID",
+    "RELIANCE",
+    "TCS",
+    "INFY",
+    "HDFCBANK",
+    "ICICIBANK",
+    "SBIN",
+    "HINDUNILVR",
+    "ITC",
+    "BHARTIARTL",
+    "KOTAKBANK",
+    "LT",
+    "AXISBANK",
+    "ASIANPAINT",
+    "MARUTI",
+    "SUNPHARMA",
+    "TITAN",
+    "WIPRO",
+    "ULTRACEMCO",
+    "NESTLEIND",
+    "BAJFINANCE",
+    "HCLTECH",
+    "ADANIENT",
+    "TATAMOTORS",
+    "TATASTEEL",
+    "ONGC",
+    "NTPC",
+    "POWERGRID",
 }
 
 # Static last-resort profile enrichment, keyed by the exact symbol form each
@@ -26,11 +50,27 @@ KNOWN_PROFILES = {
     "NVDA": {"name": "NVIDIA Corporation", "sector": "Technology", "industry": "Semiconductors"},
     "TSLA": {"name": "Tesla Inc.", "sector": "Consumer Cyclical", "industry": "Auto Manufacturers"},
     "AAPL": {"name": "Apple Inc.", "sector": "Technology", "industry": "Consumer Electronics"},
-    "MSFT": {"name": "Microsoft Corporation", "sector": "Technology", "industry": "Software - Infrastructure"},
+    "MSFT": {
+        "name": "Microsoft Corporation",
+        "sector": "Technology",
+        "industry": "Software - Infrastructure",
+    },
     "AMZN": {"name": "Amazon.com Inc.", "sector": "Consumer Cyclical", "industry": "Internet Retail"},
-    "GOOGL": {"name": "Alphabet Inc.", "sector": "Communication Services", "industry": "Internet Content & Information"},
-    "META": {"name": "Meta Platforms Inc.", "sector": "Communication Services", "industry": "Internet Content & Information"},
-    "RELIANCE.NS": {"name": "Reliance Industries Limited", "sector": "Energy", "industry": "Oil & Gas Refining & Marketing"},
+    "GOOGL": {
+        "name": "Alphabet Inc.",
+        "sector": "Communication Services",
+        "industry": "Internet Content & Information",
+    },
+    "META": {
+        "name": "Meta Platforms Inc.",
+        "sector": "Communication Services",
+        "industry": "Internet Content & Information",
+    },
+    "RELIANCE.NS": {
+        "name": "Reliance Industries Limited",
+        "sector": "Energy",
+        "industry": "Oil & Gas Refining & Marketing",
+    },
     "TCS.NS": {"name": "Tata Consultancy Services", "sector": "Technology", "industry": "IT Services"},
     "INFY.NS": {"name": "Infosys Limited", "sector": "Technology", "industry": "IT Services"},
 }
@@ -41,12 +81,11 @@ class StockService:
     and BSE India, with India-primary market resolution and Redis caching."""
 
     def __init__(self):
-        self.redis_client: Optional[Redis] = None
+        self.redis_client: Redis | None = None
         self.finnhub_key = settings.FINNHUB_API_KEY
         self.alpha_vantage_key = settings.ALPHA_VANTAGE_API_KEY
         self.twelve_data_key = settings.TWELVE_DATA_API_KEY
 
-        # Check if keys are placeholders
         if self.finnhub_key == "your_finnhub_key_here" or not self.finnhub_key:
             self.finnhub_key = None
         if self.alpha_vantage_key == "your_alpha_vantage_key_here" or not self.alpha_vantage_key:
@@ -71,13 +110,13 @@ class StockService:
         return "US"
 
     @staticmethod
-    def indian_yahoo_candidates(symbol: str) -> List[str]:
+    def indian_yahoo_candidates(symbol: str) -> list[str]:
         """Yahoo Finance chart symbols to try, in order, for an Indian ticker."""
         if symbol.endswith(".NS") or symbol.endswith(".BO"):
             return [symbol]
         return [f"{symbol}.NS", f"{symbol}.BO"]
 
-    async def fetch_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def fetch_quote(self, symbol: str) -> dict[str, Any] | None:
         """Fetch real-time quote for a stock. Checks Redis cache first.
 
         Indian tickers: Yahoo Finance (.NS then .BO) -> BSE India public API.
@@ -135,7 +174,7 @@ class StockService:
 
         return quote_data
 
-    async def _fetch_indian_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_indian_quote(self, symbol: str) -> dict[str, Any] | None:
         """Indian-market quote chain: Yahoo Finance (.NS then .BO) -> BSE India."""
         for candidate in self.indian_yahoo_candidates(symbol):
             data = await self._fetch_yfinance_quote(candidate)
@@ -146,7 +185,7 @@ class StockService:
         base = symbol.split(".")[0]
         return await self._fetch_bse_quote(base)
 
-    async def fetch_profile(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def fetch_profile(self, symbol: str) -> dict[str, Any] | None:
         """Fetch general company profile information."""
         symbol = symbol.upper()
         cache_key = f"profile:{symbol}"
@@ -202,7 +241,9 @@ class StockService:
 
         return profile_data
 
-    async def fetch_history(self, symbol: str, interval: str = "1d", range_str: str = "1mo") -> List[Dict[str, Any]]:
+    async def fetch_history(
+        self, symbol: str, interval: str = "1d", range_str: str = "1mo"
+    ) -> list[dict[str, Any]]:
         """Fetch historical daily price quotes (OHLCV).
 
         Intervals supported: 1d, 1wk. Ranges supported: 1mo, 3mo, 6mo, 1y.
@@ -235,19 +276,29 @@ class StockService:
                                 raw_series = data["Time Series (Daily)"]
                                 history_data = []
                                 sorted_dates = sorted(raw_series.keys())
-                                limit_days = 22 if range_str == "1mo" else 65 if range_str == "3mo" else 130 if range_str == "6mo" else 252
+                                limit_days = (
+                                    22
+                                    if range_str == "1mo"
+                                    else 65
+                                    if range_str == "3mo"
+                                    else 130
+                                    if range_str == "6mo"
+                                    else 252
+                                )
                                 for d_str in sorted_dates[-limit_days:]:
                                     metrics = raw_series[d_str]
-                                    history_data.append({
-                                        "symbol": symbol,
-                                        "date": d_str,
-                                        "open": float(metrics["1. open"]),
-                                        "high": float(metrics["2. high"]),
-                                        "low": float(metrics["3. low"]),
-                                        "close": float(metrics["4. close"]),
-                                        "volume": int(metrics["5. volume"]),
-                                        "source": "alphavantage"
-                                    })
+                                    history_data.append(
+                                        {
+                                            "symbol": symbol,
+                                            "date": d_str,
+                                            "open": float(metrics["1. open"]),
+                                            "high": float(metrics["2. high"]),
+                                            "low": float(metrics["3. low"]),
+                                            "close": float(metrics["4. close"]),
+                                            "volume": int(metrics["5. volume"]),
+                                            "source": "alphavantage",
+                                        }
+                                    )
                 except Exception as e:
                     logger.error(f"Error fetching history from Alpha Vantage for {symbol}: {e}")
 
@@ -262,7 +313,7 @@ class StockService:
 
         return history_data or []
 
-    async def _fetch_indian_history(self, symbol: str, interval: str, range_str: str) -> List[Dict[str, Any]]:
+    async def _fetch_indian_history(self, symbol: str, interval: str, range_str: str) -> list[dict[str, Any]]:
         """Indian-market history chain: Yahoo Finance (.NS then .BO)."""
         for candidate in self.indian_yahoo_candidates(symbol):
             data = await self._fetch_yfinance_history(candidate, interval, range_str)
@@ -272,11 +323,9 @@ class StockService:
                 return data
         return []
 
-    # ================================================
-    # Twelve Data Methods (US/other markets)
-    # ================================================
+    # ── Twelve Data (US / other markets) ──
 
-    async def _fetch_twelvedata_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_twelvedata_quote(self, symbol: str) -> dict[str, Any] | None:
         """Fetch quote via Twelve Data (free tier ~800 req/day with a registered key)."""
         if not self.twelve_data_key:
             return None
@@ -306,7 +355,7 @@ class StockService:
             logger.error(f"Error fetching quote from Twelve Data for {symbol}: {e}")
         return None
 
-    async def _fetch_twelvedata_profile(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_twelvedata_profile(self, symbol: str) -> dict[str, Any] | None:
         """Fetch fundamentals via Twelve Data's /statistics endpoint."""
         if not self.twelve_data_key:
             return None
@@ -333,7 +382,9 @@ class StockService:
             logger.error(f"Error fetching profile from Twelve Data for {symbol}: {e}")
         return None
 
-    async def _fetch_twelvedata_history(self, symbol: str, interval: str, range_str: str) -> List[Dict[str, Any]]:
+    async def _fetch_twelvedata_history(
+        self, symbol: str, interval: str, range_str: str
+    ) -> list[dict[str, Any]]:
         """Fetch historical OHLCV via Twelve Data's /time_series endpoint."""
         if not self.twelve_data_key:
             return []
@@ -351,26 +402,26 @@ class StockService:
                     values = data.get("values", [])
                     history_data = []
                     for row in reversed(values):  # Twelve Data returns newest-first
-                        history_data.append({
-                            "symbol": symbol,
-                            "date": row["datetime"][:10],
-                            "open": float(row["open"]),
-                            "high": float(row["high"]),
-                            "low": float(row["low"]),
-                            "close": float(row["close"]),
-                            "volume": int(row.get("volume") or 0),
-                            "source": "twelvedata",
-                        })
+                        history_data.append(
+                            {
+                                "symbol": symbol,
+                                "date": row["datetime"][:10],
+                                "open": float(row["open"]),
+                                "high": float(row["high"]),
+                                "low": float(row["low"]),
+                                "close": float(row["close"]),
+                                "volume": int(row.get("volume") or 0),
+                                "source": "twelvedata",
+                            }
+                        )
                     return history_data
         except Exception as e:
             logger.error(f"Error fetching history from Twelve Data for {symbol}: {e}")
         return []
 
-    # ================================================
-    # BSE India Method (Indian-market fallback)
-    # ================================================
+    # ── BSE India (Indian-market fallback) ──
 
-    async def _fetch_bse_quote(self, scrip_code: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_bse_quote(self, scrip_code: str) -> dict[str, Any] | None:
         """Best-effort BSE India public API fallback.
 
         BSE's endpoint keys off a numeric scrip code, not a ticker symbol, so this
@@ -411,11 +462,9 @@ class StockService:
             logger.error(f"Error fetching quote from BSE India for scrip {scrip_code}: {e}")
         return None
 
-    # ================================================
-    # Yahoo Finance Methods
-    # ================================================
+    # ── Yahoo Finance ──
 
-    async def _fetch_yfinance_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_yfinance_quote(self, symbol: str) -> dict[str, Any] | None:
         """Fetch quote via public Yahoo Finance chart API. Returns None on failure
         (no fabricated placeholder price) so callers can surface "data unavailable"."""
         try:
@@ -457,13 +506,11 @@ class StockService:
 
         return None
 
-    async def _fetch_yfinance_profile(self, symbol: str) -> Dict[str, Any]:
+    async def _fetch_yfinance_profile(self, symbol: str) -> dict[str, Any]:
         """Generate static profile using symbol tags (last-resort profile enrichment)."""
-        profile = KNOWN_PROFILES.get(symbol, {
-            "name": f"{symbol} Corp",
-            "sector": "Financial Services",
-            "industry": "Asset Management"
-        })
+        profile = KNOWN_PROFILES.get(
+            symbol, {"name": f"{symbol} Corp", "sector": "Financial Services", "industry": "Asset Management"}
+        )
 
         return {
             "symbol": symbol,
@@ -473,10 +520,12 @@ class StockService:
             "logo": "",
             "website": f"https://finance.yahoo.com/quote/{symbol}",
             "market_cap": 1000000000.0,
-            "source": "static_profile_fallback"
+            "source": "static_profile_fallback",
         }
 
-    async def _fetch_yfinance_history(self, symbol: str, interval: str, range_str: str) -> List[Dict[str, Any]]:
+    async def _fetch_yfinance_history(
+        self, symbol: str, interval: str, range_str: str
+    ) -> list[dict[str, Any]]:
         """Fetch history quotes via public Yahoo Finance chart API. Returns an empty
         list on failure (no fabricated placeholder candles)."""
         try:
@@ -503,16 +552,18 @@ class StockService:
                         if opens[i] is None or closes[i] is None:
                             continue
 
-                        history_list.append({
-                            "symbol": symbol,
-                            "date": d_str,
-                            "open": float(opens[i]),
-                            "high": float(highs[i]),
-                            "low": float(lows[i]),
-                            "close": float(closes[i]),
-                            "volume": int(volumes[i] or 0),
-                            "source": "yfinance"
-                        })
+                        history_list.append(
+                            {
+                                "symbol": symbol,
+                                "date": d_str,
+                                "open": float(opens[i]),
+                                "high": float(highs[i]),
+                                "low": float(lows[i]),
+                                "close": float(closes[i]),
+                                "volume": int(volumes[i] or 0),
+                                "source": "yfinance",
+                            }
+                        )
                     return history_list
         except Exception as e:
             logger.error(f"Error fetching history from yfinance for {symbol}: {e}")

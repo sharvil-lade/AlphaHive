@@ -1,7 +1,8 @@
+import datetime
 import json
 import logging
-import datetime
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 import httpx
 from redis.asyncio import Redis
 
@@ -14,7 +15,7 @@ class NewsService:
     """Service class handling company-specific news fetching and caching."""
 
     def __init__(self):
-        self.redis_client: Optional[Redis] = None
+        self.redis_client: Redis | None = None
         self.finnhub_key = settings.FINNHUB_API_KEY
         if self.finnhub_key == "your_finnhub_key_here" or not self.finnhub_key:
             self.finnhub_key = None
@@ -26,13 +27,12 @@ class NewsService:
             self.redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
         return self.redis_client
 
-    async def fetch_news(self, symbol: str) -> List[Dict[str, Any]]:
+    async def fetch_news(self, symbol: str) -> list[dict[str, Any]]:
         """Fetch news articles for a company symbol. Checks Redis cache first."""
         symbol = symbol.upper()
         cache_key = f"news:{symbol}"
         redis = await self.get_redis()
 
-        # Check cache
         cached_val = await redis.get(cache_key)
         if cached_val:
             logger.info(f"Redis cache hit for news of: {symbol}")
@@ -41,6 +41,7 @@ class NewsService:
         # Indian tickers: Finnhub's free tier has little/no NSE/BSE coverage, and
         # Yahoo's search-based news fallback is unreliable for Indian tickers (see below).
         from app.services.stock_service import stock_service
+
         market = stock_service.resolve_market(symbol)
 
         # Cache miss, fetch live. Marketaux is finance-specific with real Indian +
@@ -54,7 +55,7 @@ class NewsService:
                 # Finnhub requires date ranges. Fetch last 7 days of news.
                 today_str = datetime.date.today().strftime("%Y-%m-%d")
                 week_ago_str = (datetime.date.today() - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-                
+
                 url = f"https://finnhub.io/api/v1/company-news?symbol={symbol}&from={week_ago_str}&to={today_str}&token={self.finnhub_key}"
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.get(url)
@@ -62,18 +63,19 @@ class NewsService:
                         raw_news = resp.json()
                         if isinstance(raw_news, list):
                             news_data = []
-                            # Limit to top 15 news articles
                             for item in raw_news[:15]:
-                                news_data.append({
-                                    "symbol": symbol,
-                                    "headline": item.get("headline", ""),
-                                    "summary": item.get("summary", ""),
-                                    "url": item.get("url", ""),
-                                    "source": item.get("source", "Finnhub"),
-                                    "published_at": datetime.datetime.fromtimestamp(
-                                        item.get("datetime", int(datetime.datetime.utcnow().timestamp()))
-                                    ).isoformat(),
-                                })
+                                news_data.append(
+                                    {
+                                        "symbol": symbol,
+                                        "headline": item.get("headline", ""),
+                                        "summary": item.get("summary", ""),
+                                        "url": item.get("url", ""),
+                                        "source": item.get("source", "Finnhub"),
+                                        "published_at": datetime.datetime.fromtimestamp(
+                                            item.get("datetime", int(datetime.datetime.utcnow().timestamp()))
+                                        ).isoformat(),
+                                    }
+                                )
             except Exception as e:
                 logger.error(f"Error fetching news from Finnhub for {symbol}: {e}")
 
@@ -87,15 +89,15 @@ class NewsService:
             news_data = await self._fetch_yfinance_news(symbol)
 
         if news_data:
-            # Cache news articles for 1 hour (3600 seconds)
             await redis.setex(cache_key, 3600, json.dumps(news_data))
 
         return news_data or []
 
-    async def _fetch_marketaux_news(self, symbol: str, market: str) -> List[Dict[str, Any]]:
+    async def _fetch_marketaux_news(self, symbol: str, market: str) -> list[dict[str, Any]]:
         """Fetch news via Marketaux — a finance-specific news API with real global
         (including Indian NSE/BSE) coverage, unlike the generic Yahoo search fallback."""
         from app.services.stock_service import stock_service
+
         candidates = stock_service.indian_yahoo_candidates(symbol) if market == "IN" else [symbol]
 
         for candidate in candidates:
@@ -129,7 +131,7 @@ class NewsService:
 
         return []
 
-    async def _fetch_yfinance_news(self, symbol: str) -> List[Dict[str, Any]]:
+    async def _fetch_yfinance_news(self, symbol: str) -> list[dict[str, Any]]:
         """Fetch news articles using the public Yahoo Search API."""
         try:
             url = f"https://query2.finance.yahoo.com/v1/finance/search?q={symbol}&newsCount=15"
@@ -141,16 +143,20 @@ class NewsService:
                     raw_news = data.get("news", [])
                     news_data = []
                     for item in raw_news:
-                        publish_time = item.get("providerPublishTime", int(datetime.datetime.utcnow().timestamp()))
+                        publish_time = item.get(
+                            "providerPublishTime", int(datetime.datetime.utcnow().timestamp())
+                        )
                         published_at = datetime.datetime.fromtimestamp(publish_time).isoformat()
-                        news_data.append({
-                            "symbol": symbol,
-                            "headline": item.get("title", ""),
-                            "summary": item.get("summary", item.get("title", "")),
-                            "url": item.get("link", ""),
-                            "source": item.get("publisher", "Yahoo Finance"),
-                            "published_at": published_at,
-                        })
+                        news_data.append(
+                            {
+                                "symbol": symbol,
+                                "headline": item.get("title", ""),
+                                "summary": item.get("summary", item.get("title", "")),
+                                "url": item.get("link", ""),
+                                "source": item.get("publisher", "Yahoo Finance"),
+                                "published_at": published_at,
+                            }
+                        )
                     return news_data
         except Exception as e:
             logger.error(f"Error fetching news from yfinance search fallback for {symbol}: {e}")

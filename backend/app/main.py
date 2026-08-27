@@ -7,7 +7,6 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from qdrant_client import QdrantClient
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,7 +62,6 @@ async def lifespan(app: FastAPI):
             "environment": settings.ENVIRONMENT,
             "postgres": f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}",
             "redis": f"{settings.REDIS_HOST}:{settings.REDIS_PORT}",
-            "qdrant": f"{settings.QDRANT_HOST}:{settings.QDRANT_PORT}",
         },
     )
     # Hard guardrails (SECRET_KEY, CORS) fail at import time in app.core.config.
@@ -107,10 +105,6 @@ from app.api.v1.endpoints.stocks import router as stocks_router
 from app.core import metrics
 from app.core.metrics import MetricsMiddleware
 from app.core.rate_limiter import limit_10_per_min, limit_60_per_min, limit_auth
-
-# Watchlist, Alerts and Backtest stay parked: modules kept, routers not mounted. Their
-# frontend pages were removed too — re-add both halves together when they ship.
-
 
 # ── CORS ──
 # Credentialed, because identity is an httpOnly cookie. A wildcard origin is
@@ -168,13 +162,28 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # ── Register routers with rate-limiting constraints ──
 V1 = settings.API_V1_STR
 app.include_router(auth_router, prefix=f"{V1}/auth", tags=["auth"], dependencies=[Depends(limit_auth)])
-app.include_router(stocks_router, prefix=f"{V1}/stocks", tags=["stocks"], dependencies=[Depends(limit_60_per_min)])
-app.include_router(indicators_router, prefix=f"{V1}/indicators", tags=["indicators"], dependencies=[Depends(limit_60_per_min)])
-app.include_router(sentiment_router, prefix=f"{V1}/sentiment", tags=["sentiment"], dependencies=[Depends(limit_60_per_min)])
+app.include_router(
+    stocks_router, prefix=f"{V1}/stocks", tags=["stocks"], dependencies=[Depends(limit_60_per_min)]
+)
+app.include_router(
+    indicators_router,
+    prefix=f"{V1}/indicators",
+    tags=["indicators"],
+    dependencies=[Depends(limit_60_per_min)],
+)
+app.include_router(
+    sentiment_router, prefix=f"{V1}/sentiment", tags=["sentiment"], dependencies=[Depends(limit_60_per_min)]
+)
 app.include_router(sec_router, prefix=f"{V1}/sec", tags=["sec"], dependencies=[Depends(limit_60_per_min)])
-app.include_router(agents_router, prefix=f"{V1}/agents", tags=["agents"], dependencies=[Depends(limit_10_per_min)])
-app.include_router(reports_router, prefix=f"{V1}/reports", tags=["reports"], dependencies=[Depends(limit_60_per_min)])
-app.include_router(portfolio_router, prefix=f"{V1}/portfolios", tags=["portfolios"], dependencies=[Depends(limit_60_per_min)])
+app.include_router(
+    agents_router, prefix=f"{V1}/agents", tags=["agents"], dependencies=[Depends(limit_10_per_min)]
+)
+app.include_router(
+    reports_router, prefix=f"{V1}/reports", tags=["reports"], dependencies=[Depends(limit_60_per_min)]
+)
+app.include_router(
+    portfolio_router, prefix=f"{V1}/portfolios", tags=["portfolios"], dependencies=[Depends(limit_60_per_min)]
+)
 app.include_router(chat_router, prefix=f"{V1}/chat", tags=["chat"], dependencies=[Depends(limit_60_per_min)])
 
 
@@ -200,13 +209,12 @@ async def liveness():
 
 @app.get(f"{V1}/health", tags=["ops"])
 async def health_check(db: AsyncSession = Depends(get_db)):
-    """Deep readiness check verifying connections to Postgres, Redis, and Qdrant."""
+    """Deep readiness check verifying connections to Postgres and Redis."""
     health_results = {
         "status": "healthy",
         "environment": settings.ENVIRONMENT,
         "postgres": "unknown",
         "redis": "unknown",
-        "qdrant": "unknown",
     }
 
     def _fail(component: str, error: Exception) -> None:
@@ -238,13 +246,6 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     finally:
         if redis_client is not None:
             await redis_client.aclose()
-
-    try:
-        start_time = time.time()
-        QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT, timeout=2).get_collections()
-        health_results["qdrant"] = f"connected ({(time.time() - start_time) * 1000:.2f}ms)"
-    except Exception as e:
-        _fail("qdrant", e)
 
     if health_results["status"] == "unhealthy":
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=health_results)

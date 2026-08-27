@@ -1,22 +1,23 @@
 import json
 import logging
 from datetime import datetime
+from typing import Any
 from uuid import UUID
-from typing import Dict, Any
+
 from sqlalchemy import select
 
+from app.agents.state import AgentState
+from app.agents.utils import log_agent_activity
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.models import AgentRun, InvestmentReport
-from app.agents.state import AgentState
-from app.agents.utils import log_agent_activity
 from app.services.llm_client import llm_client
 from app.services.stock_service import stock_service
 
 logger = logging.getLogger("decision-node")
 
 
-async def decision_node(state: AgentState) -> Dict[str, Any]:
+async def decision_node(state: AgentState) -> dict[str, Any]:
     """Decision node synthesizing analysis streams, calling the LLM client (or local fallback) for consensus memo, and saving results."""
     ticker = state["ticker"]
     run_id = state["run_id"]
@@ -29,9 +30,7 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
     sec_context = state.get("sec_context") or []
 
     start_log = await log_agent_activity(
-        run_id,
-        "decision",
-        f"Consolidating all nodes data to compile consensus report for {ticker}..."
+        run_id, "decision", f"Consolidating all nodes data to compile consensus report for {ticker}..."
     )
 
     recommendation = "HOLD"
@@ -39,7 +38,6 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
     content_markdown = ""
     source = "local_lexical_fallback"
 
-    # Try the LLM (via the shared LiteLLM-backed client) if configured
     if llm_client.is_configured:
         fundamentals_verdict = quotes.get("agent_verdict") or {}
         technical_verdict = indicators.get("agent_verdict") or {}
@@ -70,9 +68,9 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
             f"Regulatory Risk footnotes context: {sec_context}\n\n"
             f"Generate a JSON object conforming exactly to this structure:\n"
             f"{{\n"
-            f"  \"recommendation\": \"BUY\" | \"HOLD\" | \"SELL\",\n"
-            f"  \"confidence_score\": <integer from 0 to 100>,\n"
-            f"  \"memo_markdown\": <comprehensive multi-section markdown synthesis report detailing: "
+            f'  "recommendation": "BUY" | "HOLD" | "SELL",\n'
+            f'  "confidence_score": <integer from 0 to 100>,\n'
+            f'  "memo_markdown": <comprehensive multi-section markdown synthesis report detailing: '
             f"1. Executive Summary, 2. Financial Metrics Audit, 3. Technical Crossover analysis, "
             f"4. Sentiment and Catalyst narrative, 5. SEC footnote risk analysis and Statistical Beta risks. Use professional financial terminology.>\n"
             f"}}\n"
@@ -81,7 +79,10 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
 
         result = await llm_client.complete(
             messages=[
-                {"role": "system", "content": "You are a professional investment committee chatbot returning structured JSON."},
+                {
+                    "role": "system",
+                    "content": "You are a professional investment committee chatbot returning structured JSON.",
+                },
                 {"role": "user", "content": prompt},
             ],
             json_mode=True,
@@ -102,23 +103,18 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
             except (json.JSONDecodeError, TypeError, ValueError) as e:
                 logger.error(f"Failed to parse LLM decision response: {e}")
 
-    # Fallback to local rule-based generation
     if not content_markdown:
-        # 1. Compute quantitative recommendation score
         score = 50.0
-        
-        # Add Technical Score component
+
         ta_score = indicators.get("score", 0)
         score += ta_score * 0.2  # Max +20 / -20
-        
-        # Add Sentiment Score component
+
         sent_score = sentiment.get("score", 0)
         score += sent_score * 0.2  # Max +20 / -20
-        
-        # Add price change velocity
+
         pct_change = quotes.get("percent_change", 0.0)
         score += min(max(pct_change * 2.0, -10.0), 10.0)  # Max +10 / -10
-        
+
         # Risk Multipliers
         beta = risk_metrics.get("beta", 1.0)
         if beta > 1.5:
@@ -127,7 +123,7 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
             score += 5.0
 
         confidence_score = int(min(max(score, 0.0), 100.0))
-        
+
         if confidence_score >= 65:
             recommendation = "BUY"
         elif confidence_score <= 35:
@@ -135,7 +131,6 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
         else:
             recommendation = "HOLD"
 
-        # 2. Formulate Markdown template
         benchmark_label = "Nifty 50" if stock_service.resolve_market(ticker) == "IN" else "S&P 500"
         company_name = quotes.get("name", ticker)
         price = quotes.get("price", 0.0)
@@ -146,14 +141,13 @@ async def decision_node(state: AgentState) -> Dict[str, Any]:
         sent_summary = sentiment.get("summary", "No news sentiment gathered.")
         vol = risk_metrics.get("annualized_volatility", 0.2) * 100
 
-        # Build SEC citations
         sec_bullets = ""
         if sec_context:
             for i, chunk in enumerate(sec_context):
                 text_slice = chunk["text"][:300] + "..."
-                sec_bullets += f"\n* **Disclosure [{i+1}] ({chunk['section']})**: {text_slice}\n"
+                sec_bullets += f"\n* **Disclosure [{i + 1}] ({chunk['section']})**: {text_slice}\n"
         else:
-            sec_bullets = "\n* *No SEC 10-K filings context available in vector store.*"
+            sec_bullets = "\n* *No SEC 10-K filing excerpts indexed for this ticker.*"
 
         content_markdown = f"""# Investment Analysis Memo: {company_name} ({ticker})
 
@@ -172,19 +166,19 @@ This memorandum presents a synthesized financial and technical consensus rating 
 * **Asset Name:** {company_name}
 * **Current Spot Price:** ${price:.2f}
 * **Sector / Industry:** {sector} | {industry}
-* **Market Capitalization:** ${quotes.get('market_cap', 0.0):,.2f}M
+* **Market Capitalization:** ${quotes.get("market_cap", 0.0):,.2f}M
 
 ---
 
 ## 3. Technical Posture Audit
 Our Technical Indicators scoring pipeline registered a rating of **{ta_rating}** (Score: {ta_score}).
 * **Key Oscillators & Trend Signals:**
-  * RSI: {indicators.get('signals', {}).get('rsi', {}).get('signal', 'Neutral')}
-  * MACD: {indicators.get('signals', {}).get('macd', {}).get('signal', 'Neutral')}
-  * Bollinger Bands: {indicators.get('signals', {}).get('bollinger', {}).get('signal', 'Neutral')}
+  * RSI: {indicators.get("signals", {}).get("rsi", {}).get("signal", "Neutral")}
+  * MACD: {indicators.get("signals", {}).get("macd", {}).get("signal", "Neutral")}
+  * Bollinger Bands: {indicators.get("signals", {}).get("bollinger", {}).get("signal", "Neutral")}
 * **Classic Pivot Boundaries:**
-  * Resistances: R2 = ${indicators.get('pivots', {}).get('r2', 0.0):.2f} | R1 = ${indicators.get('pivots', {}).get('r1', 0.0):.2f}
-  * Supports: S1 = ${indicators.get('pivots', {}).get('s1', 0.0):.2f} | S2 = ${indicators.get('pivots', {}).get('s2', 0.0):.2f}
+  * Resistances: R2 = ${indicators.get("pivots", {}).get("r2", 0.0):.2f} | R1 = ${indicators.get("pivots", {}).get("r1", 0.0):.2f}
+  * Supports: S1 = ${indicators.get("pivots", {}).get("s1", 0.0):.2f} | S2 = ${indicators.get("pivots", {}).get("s2", 0.0):.2f}
 
 ---
 
@@ -193,40 +187,37 @@ News headlines and Reddit sentiment returned an aggregated rating of **{sent_rat
 * **Summary Catalyst Synthesis:**
   {sent_summary}
 * **Identified Catalysts:**
-  {" ".join(f"- {op}" for op in sentiment.get('opportunities', []))}
+  {" ".join(f"- {op}" for op in sentiment.get("opportunities", []))}
 * **Identified Vulnerabilities:**
-  {" ".join("- th" for th in sentiment.get('threats', []))}
+  {" ".join("- th" for th in sentiment.get("threats", []))}
 
 ---
 
 ## 5. Risk Footnotes & Volatility Metrics
 * **Statistical Beta Coefficient:** {beta:.2f} (versus {benchmark_label} benchmark index)
-* **Annualized Daily Volatility:** {vol:.2f}% (computed over {risk_metrics.get('history_days', 0)} trading days)
+* **Annualized Daily Volatility:** {vol:.2f}% (computed over {risk_metrics.get("history_days", 0)} trading days)
 * **Indexed SEC 10-K Footnote Disclosures:**
   {sec_bullets}
 """
 
-    # 3. Write execution reports to Postgres Database
     db_write_log = ""
     try:
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                # Update AgentRun status
                 stmt = select(AgentRun).where(AgentRun.id == UUID(run_id))
                 result = await session.execute(stmt)
                 agent_run = result.scalar_one_or_none()
-                
+
                 if agent_run:
                     agent_run.status = "completed"
                     agent_run.ended_at = datetime.utcnow()
-                    
-                    # Create InvestmentReport entry
+
                     report = InvestmentReport(
                         run_id=UUID(run_id),
                         ticker=ticker,
                         recommendation=recommendation.lower(),
                         confidence_score=confidence_score,
-                        content_markdown=content_markdown
+                        content_markdown=content_markdown,
                     )
                     session.add(report)
                     db_write_log = f"Successfully saved investment report row in PostgreSQL. ID: {report.id}"
@@ -239,7 +230,7 @@ News headlines and Reddit sentiment returned an aggregated rating of **{sent_rat
     success_log = await log_agent_activity(
         run_id,
         "decision",
-        f"Consensus report generated via {source}. Rating: {recommendation}. {db_write_log}"
+        f"Consensus report generated via {source}. Rating: {recommendation}. {db_write_log}",
     )
 
     return {
@@ -247,7 +238,7 @@ News headlines and Reddit sentiment returned an aggregated rating of **{sent_rat
         "decision": {
             "recommendation": recommendation,
             "confidence_score": confidence_score,
-            "content_markdown": content_markdown
+            "content_markdown": content_markdown,
         },
-        "logs": [start_log, success_log]
+        "logs": [start_log, success_log],
     }

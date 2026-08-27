@@ -31,15 +31,15 @@ Run through this before exposing Alpha Hive publicly.
 
 ## 3. Infrastructure
 
-- [ ] Managed **Postgres** (Supabase), **Redis** and **Qdrant**. Do not run
+- [ ] Managed **Postgres** (Supabase) and **Redis**. Do not run
       production on Docker Desktop over a OneDrive-synced path — observed to drop
       containers mid-run.
-- [ ] Serverless/Vercel: use the Supabase **transaction pooler** (port 6543).
+- [ ] Behind a connection pooler, use the Supabase **transaction pooler** (6543).
       `app/db/session.py` detects it and disables prepared statements and pooling.
 - [ ] Migrations applied: `python -m alembic -c alembic.ini upgrade head`.
-- [ ] `GET /api/v1/health` returns all three services connected.
+- [ ] `GET /api/v1/health` returns Postgres and Redis connected.
       Point load-balancer probes at `/api/v1/health/live` instead — the deep check
-      opens three connections per call.
+      opens a connection to each backing service per call.
 - [ ] Redis retention covers `chat_events:*` (24h TTL) so reconnecting SSE clients
       resume correctly.
 
@@ -71,9 +71,11 @@ Run through this before exposing Alpha Hive publicly.
 
 ## Known limitations (ship-aware)
 
-- **Background runs are in-process.** Agent runs use `asyncio.create_task`, so they
-  die if the process restarts, and **will not work on serverless** (Vercel freezes
-  the function once the response is returned). Long-running host or a real queue.
+- **Background runs are in-process.** Agent runs use `asyncio.create_task`, so they die
+  if the process restarts, and **will not work on serverless** (the platform freezes the
+  instance once the response is returned). This is why the app ships as a container.
+  Scaling past one backend replica needs a real queue: `/stop` looks the run up in an
+  in-memory dict, so it silently no-ops against a sibling replica.
 - **Rate limiting is per-IP** and fails open when Redis is down. Distributed
   credential stuffing is not covered — add per-account lockout or CAPTCHA if it
   becomes a problem.
@@ -81,6 +83,6 @@ Run through this before exposing Alpha Hive publicly.
 - **No billing or usage metering per account.** `MAX_TOKENS_PER_SESSION` is the only
   cost ceiling.
 - **No error tracking or LLM tracing** wired up (Sentry, Langfuse).
-- **Parked features** (watchlist, alerts, backtest): backend modules retained but not
-  mounted in `app/main.py`. Re-enable the routers and rebuild the frontend pages
-  together — shipping one half leaves dead routes.
+- **SEC filing search falls back to keyword ranking** when `EMBEDDING_MODEL` is unset.
+  It works, but it matches words rather than meaning — set an embedding model your
+  LiteLLM key can reach for true semantic retrieval.

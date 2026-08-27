@@ -5,8 +5,8 @@ import json
 import numpy as np
 from langchain_core.tools import tool
 
+from app.services import sec_index
 from app.services.stock_service import stock_service
-from app.services.vector_store import vector_store
 
 # Beta benchmark: Nifty 50 for Indian tickers (URL-encoded "^NSEI"), S&P 500 (SPY)
 # for everything else.
@@ -23,9 +23,7 @@ async def get_risk_metrics(symbol: str) -> str:
     risky/volatile a stock is versus the market. `symbol` is the ticker. Returns JSON.
     """
     benchmark = (
-        _INDIA_BENCHMARK_SYMBOL
-        if stock_service.resolve_market(symbol) == "IN"
-        else _US_BENCHMARK_SYMBOL
+        _INDIA_BENCHMARK_SYMBOL if stock_service.resolve_market(symbol) == "IN" else _US_BENCHMARK_SYMBOL
     )
     beta = 1.0
     annualized_vol = 0.0
@@ -79,7 +77,7 @@ async def search_sec_filings(symbol: str, query: str) -> str:
     ticker has no filings indexed (only a small ticker set is currently indexed).
     """
     try:
-        results = await vector_store.search_chunks(symbol, query, limit=3)
+        results = await sec_index.search(symbol, query, limit=3)
     except Exception as e:  # noqa: BLE001
         return f"SEC filing search unavailable for {symbol}: {e}"
 

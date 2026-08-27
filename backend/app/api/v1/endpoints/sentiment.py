@@ -3,15 +3,13 @@ from fastapi import APIRouter, Query
 from app.schemas.schemas import SentimentResponse
 from app.services.sentiment_service import sentiment_service
 
-from typing import Optional
-
 router = APIRouter()
 
 
 @router.get("/summary", response_model=SentimentResponse)
 async def get_sentiment_summary(
     symbol: str = Query(..., description="Stock Ticker Symbol"),
-    session_id: Optional[str] = Query(None, description="Client Session ID")
+    session_id: str | None = Query(None, description="Client Session ID"),
 ):
     """Get consolidated news and social sentiment analysis for a stock ticker symbol.
 

@@ -16,11 +16,11 @@ Tools are grouped by the specialist that owns them so the mapping
     PORTFOLIO_TOOLS     -> get_user_portfolio   (master/supervisor context)
 """
 
-from app.agents.tools.market_tools import get_stock_quote, get_company_profile
-from app.agents.tools.technical_tools import get_technical_analysis
-from app.agents.tools.sentiment_tools import get_news_sentiment
-from app.agents.tools.risk_tools import get_risk_metrics, search_sec_filings
+from app.agents.tools.market_tools import get_company_profile, get_stock_quote
 from app.agents.tools.portfolio_tools import get_user_portfolio
+from app.agents.tools.risk_tools import get_risk_metrics, search_sec_filings
+from app.agents.tools.sentiment_tools import get_news_sentiment
+from app.agents.tools.technical_tools import get_technical_analysis
 
 FUNDAMENTALS_TOOLS = [get_stock_quote, get_company_profile]
 TECHNICAL_TOOLS = [get_technical_analysis]

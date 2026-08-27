@@ -1,5 +1,6 @@
-// Vercel Services mounts FastAPI at /svc/api; next.config.js proxies the same path in
-// dev. Always same-origin, so the httpOnly session cookie is sent automatically.
+// next.config.js proxies /svc/api to FastAPI, so requests are same-origin and the
+// httpOnly session cookie is sent automatically. Set NEXT_PUBLIC_API_URL only when the
+// backend is on a different origin — then CORS_ORIGINS must list this one.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/svc/api';
 const V1 = `${API_BASE_URL}/api/v1`;
 

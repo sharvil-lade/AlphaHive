@@ -1,22 +1,24 @@
 import json
 import logging
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
+from conftest import requires_redis
 from fastapi import HTTPException
 from httpx import AsyncClient
 
-from app.main import app
-from app.core.rate_limiter import RateLimiter
-from app.core.logging_config import configure_logging, JSONFormatter
 from app.core.config import settings
+from app.core.logging_config import JSONFormatter, configure_logging
+from app.core.rate_limiter import RateLimiter
+from app.main import app
 from app.services.token_budget_service import TokenBudgetService
-from conftest import requires_redis
 
 
 @pytest_asyncio.fixture
 async def client():
     from httpx import ASGITransport
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -81,6 +83,7 @@ async def test_rate_limiter_prefers_the_forwarded_client_ip(monkeypatch):
 async def test_token_budget_tracking():
     """Test token budget service counting and threshold checks."""
     import uuid
+
     session_id = f"test_budget_session_{uuid.uuid4().hex}"
 
     # Initialize a custom budget tracker with 500 max tokens for testing

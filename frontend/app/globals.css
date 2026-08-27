@@ -47,8 +47,10 @@
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 
-  /* Suppress the default ring only for pointer focus; keyboard users keep a visible
-     focus indicator, which `outline: none` on :focus used to remove entirely. */
+  /* Drop the UA outline, then draw our own indicator on :focus-visible below.
+     Text fields match :focus-visible on mouse click too, not only via the keyboard —
+     that is deliberate in the spec. So a field whose wrapper already shows focus must
+     opt out of the ring, or it renders two nested outlines. */
   input:focus,
   select:focus,
   textarea:focus {

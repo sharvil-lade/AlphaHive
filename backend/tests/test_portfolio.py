@@ -51,7 +51,13 @@ async def test_portfolio_lifecycle_endpoints(client):
     assert len(summary["holdings"]) == 2
     assert summary["total_cost"] == (20.0 * 160.00) + (5.0 * 180.00)
     assert summary["total_value"] > 0
-    for key in ("gain_loss", "gain_loss_percentage", "weighted_beta", "weighted_volatility", "sector_weights"):
+    for key in (
+        "gain_loss",
+        "gain_loss_percentage",
+        "weighted_beta",
+        "weighted_volatility",
+        "sector_weights",
+    ):
         assert key in summary
 
     # 6. Edit a holding

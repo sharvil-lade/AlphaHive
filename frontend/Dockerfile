@@ -1,53 +1,37 @@
-# ================================================
-# Stage 1: Install dependencies
-# ================================================
-FROM node:18-alpine AS deps
+# Node 22 to match package.json "engines" and the CI runner.
+FROM node:22-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+# npm ci (not install) so the image is built from the committed lockfile.
+COPY package.json package-lock.json ./
+RUN npm ci
 
-# ================================================
-# Stage 2: Rebuild the source code only when needed
-# ================================================
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Next.js collects completely anonymous telemetry data about general usage.
-ENV NEXT_TELEMETRY_DISABLED 1
-
+# Baked into the bundle at build time (sitemap.xml, robots.txt, canonical URLs).
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# ================================================
-# Stage 3: Production runner
-# ================================================
-FROM node:18-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
 
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
-
-# Set the correct permission for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
+# next.config.js sets output: 'standalone', which traces only the files the server
+# actually imports — this is what keeps the runtime image small.
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
-
 EXPOSE 3000
-
-ENV PORT 3000
 
 CMD ["node", "server.js"]

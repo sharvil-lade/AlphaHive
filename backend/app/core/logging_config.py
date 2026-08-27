@@ -9,12 +9,13 @@ All loggers throughout the application will automatically emit JSON-formatted
 lines with consistent fields: timestamp, level, logger, message, and any
 bound extra context fields.
 """
+
 import json
 import logging
 import sys
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 
 class JSONFormatter(logging.Formatter):
@@ -32,18 +33,35 @@ class JSONFormatter(logging.Formatter):
     """
 
     RESERVED_ATTRS = {
-        "args", "created", "exc_info", "exc_text", "filename",
-        "funcName", "levelname", "levelno", "lineno", "message",
-        "module", "msecs", "msg", "name", "pathname", "process",
-        "processName", "relativeCreated", "stack_info", "taskName",
-        "thread", "threadName",
+        "args",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "message",
+        "module",
+        "msecs",
+        "msg",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "taskName",
+        "thread",
+        "threadName",
     }
 
     def format(self, record: logging.LogRecord) -> str:
         record.message = record.getMessage()
         # Use datetime for microsecond precision — time.strftime('%f') is unsupported on Windows
-        ts = datetime.fromtimestamp(record.created, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-        log_object: Dict[str, Any] = {
+        ts = datetime.fromtimestamp(record.created, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+        log_object: dict[str, Any] = {
             "timestamp": ts,
             "level": record.levelname,
             "logger": record.name,
@@ -66,6 +84,7 @@ class JSONFormatter(logging.Formatter):
 
 class RequestTimingFilter(logging.Filter):
     """Injects a relative timestamp (seconds since process start) into every record."""
+
     _start = time.time()
 
     def filter(self, record: logging.LogRecord) -> bool:

@@ -9,7 +9,8 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import delete as sa_delete, select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,13 +26,11 @@ from app.core.security import hash_password, verify_password
 from app.db.session import get_db
 from app.models.models import (
     AgentRun,
-    Alert,
     Conversation,
     Message,
     Portfolio,
     PortfolioHolding,
     User,
-    Watchlist,
 )
 from app.schemas.schemas import LoginRequest, SessionResponse, SignupRequest
 
@@ -107,9 +106,7 @@ async def signup(
     authed = Principal(session_id=user.session_id, user_id=user.id, email=user.email)
     set_session_cookie(response, authed)
     logger.info("Account created", extra={"user_id": str(user.id)})
-    return SessionResponse(
-        authenticated=True, user_id=user.id, email=user.email, name=user.name
-    )
+    return SessionResponse(authenticated=True, user_id=user.id, email=user.email, name=user.name)
 
 
 @router.post("/login", response_model=SessionResponse)
@@ -126,9 +123,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
 
     authed = Principal(session_id=user.session_id, user_id=user.id, email=user.email)
     set_session_cookie(response, authed)
-    return SessionResponse(
-        authenticated=True, user_id=user.id, email=user.email, name=user.name
-    )
+    return SessionResponse(authenticated=True, user_id=user.id, email=user.email, name=user.name)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -145,25 +140,17 @@ async def _holdings_of(db: AsyncSession, portfolio_id):
 
 
 @router.get("/export")
-async def export_my_data(
-    principal: Principal = Depends(require_user), db: AsyncSession = Depends(get_db)
-):
+async def export_my_data(principal: Principal = Depends(require_user), db: AsyncSession = Depends(get_db)):
     """Export everything stored about the account as JSON (DPDP / GDPR portability)."""
     sid = principal.session_id
 
-    portfolios = (
-        (await db.execute(select(Portfolio).where(Portfolio.session_id == sid))).scalars().all()
-    )
+    portfolios = (await db.execute(select(Portfolio).where(Portfolio.session_id == sid))).scalars().all()
     conversations = (
-        (await db.execute(select(Conversation).where(Conversation.session_id == sid)))
-        .scalars()
-        .all()
+        (await db.execute(select(Conversation).where(Conversation.session_id == sid))).scalars().all()
     )
     conv_ids = [c.id for c in conversations]
     messages = (
-        (await db.execute(select(Message).where(Message.conversation_id.in_(conv_ids))))
-        .scalars()
-        .all()
+        (await db.execute(select(Message).where(Message.conversation_id.in_(conv_ids)))).scalars().all()
         if conv_ids
         else []
     )
@@ -220,7 +207,7 @@ async def delete_my_account(
     Child rows cascade via the ON DELETE CASCADE on their foreign keys.
     """
     sid = principal.session_id
-    for model in (Portfolio, Conversation, AgentRun, Watchlist, Alert):
+    for model in (Portfolio, Conversation, AgentRun):
         await db.execute(sa_delete(model).where(model.session_id == sid))
     await db.execute(sa_delete(User).where(User.id == principal.user_id))
     await db.commit()

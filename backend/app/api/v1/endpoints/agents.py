@@ -1,18 +1,19 @@
+import asyncio
 import json
 import logging
-import asyncio
 from datetime import datetime
 from uuid import UUID, uuid4
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import Principal, get_principal, require_principal
-from app.db.session import get_db, AsyncSessionLocal
-from app.models.models import AgentRun, InvestmentReport
-from app.schemas.schemas import AgentRunSchema, AgentRunDetailResponse
 from app.agents.utils import get_redis, log_agent_activity
+from app.core.deps import Principal, get_principal, require_principal
+from app.db.session import AsyncSessionLocal, get_db
+from app.models.models import AgentRun, InvestmentReport
+from app.schemas.schemas import AgentRunDetailResponse, AgentRunSchema
 
 router = APIRouter()
 logger = logging.getLogger("agents-api")
@@ -22,6 +23,7 @@ async def execute_agent_workflow(run_id: UUID, session_id: str, ticker: str):
     """Asynchronous background execution of the LangGraph state machine."""
     try:
         from app.agents.graph import agent_graph
+
         initial_state = {
             "session_id": session_id,
             "ticker": ticker,
@@ -33,12 +35,11 @@ async def execute_agent_workflow(run_id: UUID, session_id: str, ticker: str):
             "sec_context": [],
             "risk_metrics": {},
             "decision": {},
-            "logs": []
+            "logs": [],
         }
         await agent_graph.ainvoke(initial_state)
     except Exception as e:
         logger.error(f"Error executing LangGraph workflow for run {run_id}: {e}")
-        # Mark AgentRun as failed in DB
         try:
             async with AsyncSessionLocal() as session:
                 async with session.begin():
@@ -48,13 +49,8 @@ async def execute_agent_workflow(run_id: UUID, session_id: str, ticker: str):
                     if agent_run:
                         agent_run.status = "failed"
                         agent_run.ended_at = datetime.utcnow()
-            
-            # Log failure to Redis
-            await log_agent_activity(
-                str(run_id), 
-                "orchestrator", 
-                f"Critical agent workflow failure: {e}"
-            )
+
+            await log_agent_activity(str(run_id), "orchestrator", f"Critical agent workflow failure: {e}")
         except Exception as db_err:
             logger.error(f"Failed to record agent run failure in DB for {run_id}: {db_err}")
 
@@ -73,36 +69,30 @@ async def run_agent_analysis(
     symbol: str = Query(..., min_length=1, max_length=20, description="Stock Ticker Symbol"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     principal: Principal = Depends(get_principal),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Initialize an AgentRun session and launch the LangGraph workflow in the background."""
     symbol = symbol.upper()
     session_id = principal.session_id
 
-    # Check session token budget
     from app.services.token_budget_service import token_budget_service
+
     is_budget_ok = await token_budget_service.check_budget(session_id)
     if not is_budget_ok:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="You've hit this session's usage limit. Try again later."
+            detail="You've hit this session's usage limit. Try again later.",
         )
 
-    # 1. Create database row
     run_id = uuid4()
     agent_run = AgentRun(
-        id=run_id,
-        session_id=session_id,
-        ticker=symbol,
-        status="running",
-        started_at=datetime.utcnow()
+        id=run_id, session_id=session_id, ticker=symbol, status="running", started_at=datetime.utcnow()
     )
     db.add(agent_run)
-    await db.commit() # Commit explicitly to make it visible to concurrent/background tasks!
-    
-    # 2. Add graph execution to FastAPI background tasks
+    await db.commit()  # Commit explicitly to make it visible to concurrent/background tasks!
+
     background_tasks.add_task(execute_agent_workflow, run_id, session_id, symbol)
-    
+
     return {
         "id": agent_run.id,
         "session_id": agent_run.session_id,
@@ -110,7 +100,7 @@ async def run_agent_analysis(
         "status": agent_run.status,
         "started_at": agent_run.started_at,
         "ended_at": agent_run.ended_at,
-        "report": None
+        "report": None,
     }
 
 
@@ -119,9 +109,8 @@ async def log_generator(run_id: UUID):
     redis = get_redis()
     cache_key = f"agent_run_logs:{run_id}"
     read_idx = 0
-    
+
     while True:
-        # 1. Fetch any new logs from Redis
         try:
             logs = await redis.lrange(cache_key, read_idx, -1)
             if logs:
@@ -130,33 +119,29 @@ async def log_generator(run_id: UUID):
                 read_idx += len(logs)
         except Exception as e:
             logger.error(f"Error reading logs from Redis in stream generator: {e}")
-            
-        # 2. Check if the run has completed in Postgres
+
         try:
             async with AsyncSessionLocal() as session:
                 stmt = select(AgentRun).where(AgentRun.id == run_id)
                 result = await session.execute(stmt)
                 agent_run = result.scalar_one_or_none()
-                
-                # If run is finished and all logs are yielded, terminate stream
+
                 if agent_run and agent_run.status in ["completed", "failed"]:
-                    # Flush final logs from Redis
                     final_logs = await redis.lrange(cache_key, read_idx, -1)
                     for log_str in final_logs:
                         yield f"data: {log_str}\n\n"
-                    
-                    # Yield completion signal
+
                     completion_data = {
                         "node": "orchestrator",
                         "message": f"Execution finished with status: {agent_run.status}",
                         "timestamp": datetime.utcnow().isoformat(),
-                        "done": True
+                        "done": True,
                     }
                     yield f"data: {json.dumps(completion_data)}\n\n"
                     break
         except Exception as e:
             logger.error(f"Error querying AgentRun in log generator: {e}")
-            
+
         await asyncio.sleep(0.5)
 
 
@@ -183,8 +168,7 @@ async def get_agent_run_detail(
 ):
     """Fetch completed agent run info, memo report, and consolidated logs history."""
     agent_run = await _owned_run(run_id, principal.session_id, db)
-    
-    # Get logs from Redis
+
     logs = []
     try:
         redis = get_redis()
@@ -194,12 +178,12 @@ async def get_agent_run_detail(
             logs.append(json.loads(log_str))
     except Exception as e:
         logger.error(f"Failed to fetch logs from Redis for {run_id}: {e}")
-        
+
     # Eagerly load InvestmentReport (to prevent lazy-loading in async db session)
     report_stmt = select(InvestmentReport).where(InvestmentReport.run_id == run_id)
     report_result = await db.execute(report_stmt)
     report = report_result.scalar_one_or_none()
-    
+
     return {
         "run_id": agent_run.id,
         "ticker": agent_run.ticker,
@@ -208,6 +192,6 @@ async def get_agent_run_detail(
         "report": report,
         "telemetry": {
             "started_at": agent_run.started_at.isoformat(),
-            "ended_at": agent_run.ended_at.isoformat() if agent_run.ended_at else None
-        }
+            "ended_at": agent_run.ended_at.isoformat() if agent_run.ended_at else None,
+        },
     }

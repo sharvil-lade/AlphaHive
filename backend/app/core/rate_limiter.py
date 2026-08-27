@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Optional
 
 from fastapi import HTTPException, Request, status
 from redis.asyncio import Redis
@@ -37,7 +36,7 @@ class RateLimiter:
     def __init__(self, requests_per_minute: int = 60, name: str = "default"):
         self.requests_per_minute = requests_per_minute
         self.name = name
-        self.redis: Optional[Redis] = None
+        self.redis: Redis | None = None
 
     async def _get_redis(self) -> Redis:
         if self.redis is None:

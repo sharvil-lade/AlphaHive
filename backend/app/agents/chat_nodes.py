@@ -13,17 +13,17 @@ Flow:
 import asyncio
 import logging
 import re
-from typing import Any, Dict
+from typing import Any
 
+from app.agents.llm import is_agent_llm_configured
 from app.agents.specialists import (
+    _SUPERVISOR_PROMPT,
     PORTFOLIO_DOCTOR,
     SPECIALIST_AGENTS,
     SPECIALIST_KEYS,
-    _SUPERVISOR_PROMPT,
     master_supervisor,
     portfolio_doctor_agent,
 )
-from app.agents.llm import is_agent_llm_configured
 from app.agents.state import AgentState
 from app.agents.utils import emit_chat_event, log_agent_activity
 
@@ -48,7 +48,7 @@ _CONFIDENCE_RE = re.compile(r"CONFIDENCE:\s*(\d+)", re.IGNORECASE)
 _RATIONALE_RE = re.compile(r"RATIONALE:\s*(.+)", re.IGNORECASE | re.DOTALL)
 
 
-def _parse_verdict(text: str) -> Dict[str, Any]:
+def _parse_verdict(text: str) -> dict[str, Any]:
     """Pull a structured {rating, confidence, rationale} out of a specialist's verdict
     text for display in the UI. Free-prose verdicts (e.g. Portfolio Doctor) fall back
     to a short excerpt as the rationale."""
@@ -63,7 +63,7 @@ def _parse_verdict(text: str) -> Dict[str, Any]:
     }
 
 
-def _last_message_text(result: Dict[str, Any]) -> str:
+def _last_message_text(result: dict[str, Any]) -> str:
     """Pull the final assistant text out of a react-agent result."""
     messages = result.get("messages") or []
     if not messages:
@@ -71,13 +71,11 @@ def _last_message_text(result: Dict[str, Any]) -> str:
     last = messages[-1]
     content = getattr(last, "content", last if isinstance(last, str) else "")
     if isinstance(content, list):  # some providers return content parts
-        content = " ".join(
-            part.get("text", "") if isinstance(part, dict) else str(part) for part in content
-        )
+        content = " ".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
     return str(content).strip()
 
 
-async def supervisor_node(state: AgentState) -> Dict[str, Any]:
+async def supervisor_node(state: AgentState) -> dict[str, Any]:
     """Master agent: reads the query + portfolio context and plans the work."""
     message_id = state["message_id"]
     query = state["query"]
@@ -95,7 +93,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
     if is_agent_llm_configured():
         try:
             user_prompt = (
-                f"User question: \"{query}\"\n\n"
+                f'User question: "{query}"\n\n'
                 f"User's portfolio summary:\n{portfolio_context}\n\n"
                 "Now produce your plan."
             )
@@ -121,7 +119,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
                 if not tickers:
                     needs_agents = False
                     selected_agents = []
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Supervisor planning timed out")
         except Exception as e:  # noqa: BLE001
             logger.error(f"Supervisor planning failed: {e}")
@@ -146,7 +144,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
     }
 
 
-async def _run_specialist(state: AgentState, key: str) -> Dict[str, Any]:
+async def _run_specialist(state: AgentState, key: str) -> dict[str, Any]:
     """Shared body for every slave node: run the agent for the primary ticker,
     capture its verdict, and emit status events. Only invoked when the master
     selected this specialist (see the conditional fan-out in graph.py)."""
@@ -166,7 +164,7 @@ async def _run_specialist(state: AgentState, key: str) -> Dict[str, Any]:
             timeout=_AGENT_TIMEOUT,
         )
         verdict_text = _last_message_text(result)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         verdict_text = f"{label} analysis timed out."
     except Exception as e:  # noqa: BLE001
         verdict_text = f"{label} analysis unavailable ({e})."
@@ -187,27 +185,27 @@ async def _run_specialist(state: AgentState, key: str) -> Dict[str, Any]:
     }
 
 
-async def fundamentals_node(state: AgentState) -> Dict[str, Any]:
+async def fundamentals_node(state: AgentState) -> dict[str, Any]:
     return await _run_specialist(state, "fundamentals")
 
 
-async def technical_node(state: AgentState) -> Dict[str, Any]:
+async def technical_node(state: AgentState) -> dict[str, Any]:
     return await _run_specialist(state, "technical")
 
 
-async def sentiment_node(state: AgentState) -> Dict[str, Any]:
+async def sentiment_node(state: AgentState) -> dict[str, Any]:
     return await _run_specialist(state, "news_sentiment")
 
 
-async def risk_node(state: AgentState) -> Dict[str, Any]:
+async def risk_node(state: AgentState) -> dict[str, Any]:
     return await _run_specialist(state, "risk")
 
 
-async def bear_node(state: AgentState) -> Dict[str, Any]:
+async def bear_node(state: AgentState) -> dict[str, Any]:
     return await _run_specialist(state, "bear")
 
 
-async def portfolio_doctor_node(state: AgentState) -> Dict[str, Any]:
+async def portfolio_doctor_node(state: AgentState) -> dict[str, Any]:
     """Portfolio-level slave: diagnoses the user's whole portfolio. Only invoked when
     the master set portfolio_review=true (see graph.py routing)."""
     message_id = state["message_id"]
@@ -221,7 +219,7 @@ async def portfolio_doctor_node(state: AgentState) -> Dict[str, Any]:
     verdict_text = ""
     try:
         prompt = (
-            f"Diagnose this user's portfolio. Their session_id is \"{session_id}\" — call "
+            f'Diagnose this user\'s portfolio. Their session_id is "{session_id}" — call '
             "get_user_portfolio with it to load the holdings, then give your diagnosis and suggestions."
         )
         result = await asyncio.wait_for(
@@ -229,7 +227,7 @@ async def portfolio_doctor_node(state: AgentState) -> Dict[str, Any]:
             timeout=_AGENT_TIMEOUT,
         )
         verdict_text = _last_message_text(result)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         verdict_text = f"{label} analysis timed out."
     except Exception as e:  # noqa: BLE001
         verdict_text = f"{label} analysis unavailable ({e})."

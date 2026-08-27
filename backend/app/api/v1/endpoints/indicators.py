@@ -16,24 +16,20 @@ async def get_technical_posture(symbol: str = Query(..., description="Stock Tick
     scoring matrix, and returns the aggregated score, signals, and pivot levels.
     """
     symbol = symbol.upper()
-    
-    # 1. Fetch live quote metrics for volume/price change checks
+
     quote = await stock_service.fetch_quote(symbol)
     if not quote:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Quote details not found for symbol: {symbol}"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Quote details not found for symbol: {symbol}"
         )
 
-    # 2. Calculate indicators from historical pricing arrays
     indicators = await indicators_service.calculate_indicators(symbol)
     if not indicators:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Could not calculate technical indicators for symbol: {symbol}"
+            detail=f"Could not calculate technical indicators for symbol: {symbol}",
         )
 
-    # 3. Evaluate posture utilizing quantitative matrix scoring
     posture = ta_scoring.evaluate_posture(indicators, quote)
-    
+
     return posture

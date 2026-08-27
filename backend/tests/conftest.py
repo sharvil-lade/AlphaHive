@@ -8,6 +8,7 @@ import socket
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
@@ -26,13 +27,9 @@ def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
             return False
 
 
-# Qdrant and Redis are optional local containers. Skipping (rather than failing) when
-# they are absent keeps `pytest` honest: a red suite should mean broken code, not a
-# service the developer chose not to boot.
-requires_qdrant = pytest.mark.skipif(
-    not _port_open(settings.QDRANT_HOST, settings.QDRANT_PORT),
-    reason="Qdrant is not running (docker compose up -d qdrant)",
-)
+# Redis is an optional local container. Skipping (rather than failing) when it is
+# absent keeps `pytest` honest: a red suite should mean broken code, not a service
+# the developer chose not to boot.
 requires_redis = pytest.mark.skipif(
     not _port_open(settings.REDIS_HOST, settings.REDIS_PORT),
     reason="Redis is not running (docker compose up -d redis)",
@@ -66,6 +63,8 @@ async def clean_database():
 
     engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs())
     async with engine.begin() as conn:
+        # sec_chunks.embedding is a pgvector column, so the type must exist first.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield

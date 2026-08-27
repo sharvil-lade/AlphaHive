@@ -58,7 +58,7 @@ export function ChatInput({
             placeholder={'Ask about a stock, e.g. "Should I buy Reliance right now?"'}
             rows={1}
             aria-label="Your question"
-            className="flex-1 bg-transparent resize-none text-[15px] placeholder:text-mutedText py-1.5 max-h-40 disabled:opacity-60"
+            className="flex-1 bg-transparent resize-none text-[15px] placeholder:text-mutedText py-1.5 max-h-40 disabled:opacity-60 focus-visible:ring-0 focus-visible:ring-offset-0"
           />
 
           {isStreaming ? (

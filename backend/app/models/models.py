@@ -1,19 +1,25 @@
 import uuid
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Optional
+
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
-    String,
-    Float,
     BigInteger,
-    DateTime,
     Date,
+    DateTime,
+    Float,
     ForeignKey,
-    Boolean,
+    Index,
     Integer,
+    String,
+    Text,
     UniqueConstraint,
 )
+from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+EMBEDDING_DIM = 1536
 
 
 class Base(DeclarativeBase):
@@ -32,12 +38,10 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     session_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -47,10 +51,10 @@ class Stock(Base):
 
     symbol: Mapped[str] = mapped_column(String(10), primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
-    sector: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    industry: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    prices: Mapped[List["StockPrice"]] = relationship(
+    prices: Mapped[list["StockPrice"]] = relationship(
         "StockPrice", back_populates="stock", cascade="all, delete-orphan"
     )
 
@@ -58,9 +62,7 @@ class Stock(Base):
 class StockPrice(Base):
     __tablename__ = "stock_prices"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     symbol: Mapped[str] = mapped_column(
         String(10), ForeignKey("stocks.symbol", ondelete="CASCADE"), index=True
     )
@@ -79,14 +81,12 @@ class StockPrice(Base):
 class Portfolio(Base):
     __tablename__ = "portfolios"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[str] = mapped_column(String(100), index=True)
     name: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    holdings: Mapped[List["PortfolioHolding"]] = relationship(
+    holdings: Mapped[list["PortfolioHolding"]] = relationship(
         "PortfolioHolding", back_populates="portfolio", cascade="all, delete-orphan"
     )
 
@@ -94,9 +94,7 @@ class Portfolio(Base):
 class PortfolioHolding(Base):
     __tablename__ = "portfolio_holdings"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     portfolio_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
     )
@@ -113,14 +111,12 @@ class PortfolioHolding(Base):
 class AgentRun(Base):
     __tablename__ = "agent_runs"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[str] = mapped_column(String(100), index=True)
     ticker: Mapped[str] = mapped_column(String(10), index=True)
     status: Mapped[str] = mapped_column(String(50), default="running")  # running, completed, failed
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     report: Mapped[Optional["InvestmentReport"]] = relationship(
         "InvestmentReport", back_populates="run", cascade="all, delete-orphan"
@@ -130,9 +126,7 @@ class AgentRun(Base):
 class InvestmentReport(Base):
     __tablename__ = "investment_reports"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("agent_runs.id", ondelete="CASCADE"), unique=True, index=True
     )
@@ -145,48 +139,19 @@ class InvestmentReport(Base):
     run: Mapped["AgentRun"] = relationship("AgentRun", back_populates="report")
 
 
-class Watchlist(Base):
-    __tablename__ = "watchlists"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    session_id: Mapped[str] = mapped_column(String(100), index=True)
-    symbol: Mapped[str] = mapped_column(String(10), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (UniqueConstraint("session_id", "symbol", name="uq_session_symbol"),)
-
-
-class Alert(Base):
-    __tablename__ = "alerts"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    session_id: Mapped[str] = mapped_column(String(100), index=True)
-    symbol: Mapped[str] = mapped_column(String(10), index=True)
-    trigger_type: Mapped[str] = mapped_column(String(50))  # rsi_below, rsi_above, sentiment_drop, price_above, price_below
-    trigger_value: Mapped[float] = mapped_column(Float)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-
 class Conversation(Base):
     __tablename__ = "conversations"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[str] = mapped_column(String(100), index=True)
-    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    messages: Mapped[List["Message"]] = relationship(
-        "Message", back_populates="conversation", cascade="all, delete-orphan",
+    messages: Mapped[list["Message"]] = relationship(
+        "Message",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
         order_by="Message.created_at",
     )
 
@@ -194,20 +159,22 @@ class Conversation(Base):
 class Message(Base):
     __tablename__ = "messages"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(20))  # user, assistant
     content: Mapped[str] = mapped_column(String, default="")
-    status: Mapped[str] = mapped_column(String(20), default="completed")  # pending, running, completed, failed
+    status: Mapped[str] = mapped_column(
+        String(20), default="completed"
+    )  # pending, running, completed, failed
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     conversation: Mapped["Conversation"] = relationship("Conversation", back_populates="messages")
-    traces: Mapped[List["AgentTrace"]] = relationship(
-        "AgentTrace", back_populates="message", cascade="all, delete-orphan",
+    traces: Mapped[list["AgentTrace"]] = relationship(
+        "AgentTrace",
+        back_populates="message",
+        cascade="all, delete-orphan",
         order_by="AgentTrace.started_at",
     )
 
@@ -215,20 +182,53 @@ class Message(Base):
 class AgentTrace(Base):
     __tablename__ = "agent_traces"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     message_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), index=True
     )
-    node: Mapped[str] = mapped_column(String(50))  # router, fundamentals, technical, news_sentiment, risk, synthesis
+    node: Mapped[str] = mapped_column(
+        String(50)
+    )  # router, fundamentals, technical, news_sentiment, risk, synthesis
     status: Mapped[str] = mapped_column(String(20), default="running")  # running, completed, failed
-    summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary: Mapped[str | None] = mapped_column(String, nullable=True)
     # Verdict fields — populated from the agent-verdict SSE events when a run finishes.
-    label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    rating: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
-    confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    rating: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     message: Mapped["Message"] = relationship("Message", back_populates="traces")
+
+
+class SecChunk(Base):
+    """One chunk of an SEC filing, searchable semantically or by keyword.
+
+    `embedding` is null when no EMBEDDING_MODEL is configured; search then falls back
+    to Postgres full-text ranking over `content` (see services/sec_index.py).
+    """
+
+    __tablename__ = "sec_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    symbol: Mapped[str] = mapped_column(String(10), index=True)
+    chunk_id: Mapped[int] = mapped_column(Integer)
+    section: Mapped[str] = mapped_column(String(100))
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "chunk_id", name="uq_sec_chunk"),
+        Index(
+            "ix_sec_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index(
+            "ix_sec_chunks_content_fts",
+            sa_text("to_tsvector('english', content)"),
+            postgresql_using="gin",
+        ),
+    )

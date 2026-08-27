@@ -1,41 +1,34 @@
-# ================================================
-# Stage 1: Build dependencies
-# ================================================
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
-# Install compilation tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-
-# Install dependencies in user space to copy cleanly
+# --user so the whole dependency tree lands in one directory the runner can copy.
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# ================================================
-# Stage 2: Final minimal runtime
-# ================================================
-FROM python:3.12-slim as runner
+FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
+# curl is not incidental: the compose healthcheck shells out to it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && adduser --system --uid 1001 alphahive
 
-# Copy installed packages from builder
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /root/.local /usr/local
 COPY . /app
 
-ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
+USER alphahive
 EXPOSE 8000
 
-# Run FastAPI app with Uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

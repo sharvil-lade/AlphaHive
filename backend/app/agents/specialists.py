@@ -23,7 +23,7 @@ configured LLM proxy.
 """
 
 from functools import lru_cache
-from typing import List, Literal
+from typing import Literal
 
 from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel, Field
@@ -59,6 +59,7 @@ BEAR = "bear"
 
 # ────────────────────────────── Master plan schema ──────────────────────────────
 
+
 class SupervisorPlan(BaseModel):
     """Structured plan the master agent returns after reading the query + portfolio."""
 
@@ -69,7 +70,7 @@ class SupervisorPlan(BaseModel):
             "answer can handle."
         )
     )
-    tickers: List[str] = Field(
+    tickers: list[str] = Field(
         default_factory=list,
         description='Ticker symbols to analyse (e.g. ["RELIANCE"]). Empty if needs_research is false.',
     )
@@ -77,7 +78,7 @@ class SupervisorPlan(BaseModel):
         default="IN",
         description='"IN" for NSE/BSE-listed names, "US" otherwise. Default "IN".',
     )
-    selected_agents: List[str] = Field(
+    selected_agents: list[str] = Field(
         default_factory=list,
         description=(
             "Which per-stock specialist agents to dispatch, any subset of: "
@@ -182,6 +183,7 @@ _SUPERVISOR_PROMPT = (
 
 # ─────────────────────────────── Agent factories ────────────────────────────────
 
+
 @lru_cache(maxsize=1)
 def fundamentals_agent():
     return create_react_agent(
@@ -205,9 +207,7 @@ def sentiment_agent():
 
 @lru_cache(maxsize=1)
 def risk_agent():
-    return create_react_agent(
-        get_chat_model(), RISK_TOOLS, prompt=_RISK_PROMPT, name="risk_agent"
-    )
+    return create_react_agent(get_chat_model(), RISK_TOOLS, prompt=_RISK_PROMPT, name="risk_agent")
 
 
 @lru_cache(maxsize=1)
@@ -244,9 +244,7 @@ def master_supervisor():
 
     Returns a Runnable: `.ainvoke(messages)` -> SupervisorPlan.
     """
-    return get_chat_model(settings.LLM_MODEL_PRIMARY, temperature=0.0).with_structured_output(
-        SupervisorPlan
-    )
+    return get_chat_model(settings.LLM_MODEL_PRIMARY, temperature=0.0).with_structured_output(SupervisorPlan)
 
 
 # Maps a specialist key -> its agent factory, so the graph can dispatch by name.

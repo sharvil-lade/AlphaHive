@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15-alpine
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
@@ -42,8 +42,11 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r backend/requirements.txt
       - name: Lint
-        # From backend/ so ruff.toml applies; covers app, tests and scripts.
+        # From backend/ so ruff.toml applies; covers app and tests.
         run: ruff check .
+        working-directory: backend
+      - name: Format
+        run: ruff format --check .
         working-directory: backend
       - name: Migrations
         run: python -m alembic -c alembic.ini upgrade head

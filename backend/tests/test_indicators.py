@@ -1,11 +1,11 @@
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
-
-from app.main import app
 
 # Use pytest-asyncio to handle async tests
 from conftest import requires_redis
+from httpx import AsyncClient
+
+from app.main import app
 
 pytestmark = pytest.mark.asyncio
 
@@ -13,6 +13,7 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def client():
     from httpx import ASGITransport
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -25,13 +26,13 @@ async def test_indicators_posture_endpoint(client):
     resp = await client.get("/api/v1/indicators/ta?symbol=AAPL")
     assert resp.status_code == 200
     data = resp.json()
-    
+
     assert data["symbol"] == "AAPL"
     assert "close" in data
     assert "score" in data
     assert "rating" in data
     assert "summary" in data
-    
+
     # Assert score is bounded correctly
     assert -100 <= data["score"] <= 100
     assert data["rating"] in ["BUY", "HOLD", "SELL"]
@@ -43,7 +44,7 @@ async def test_indicators_posture_endpoint(client):
     assert "trends" in signals
     assert "bollinger" in signals
     assert "volume" in signals
-    
+
     # Check details of a single signal
     rsi_sig = signals["rsi"]
     assert "score" in rsi_sig

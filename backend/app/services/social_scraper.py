@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import Any
 
 logger = logging.getLogger("social-scraper")
 
@@ -12,7 +12,7 @@ class SocialScraper:
     Reddit integration is built (see plan's deferred items).
     """
 
-    async def fetch_reddit_posts(self, symbol: str) -> List[Dict[str, Any]]:
+    async def fetch_reddit_posts(self, symbol: str) -> list[dict[str, Any]]:
         logger.debug(f"Skipping social scrape for {symbol} — anonymous Reddit access is unavailable.")
         return []
 

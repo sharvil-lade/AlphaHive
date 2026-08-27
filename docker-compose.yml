@@ -5,7 +5,7 @@ services:
   # Postgres lives on Supabase now (see DATABASE_URL in .env). This container is
   # opt-in for a fully offline stack: docker compose --profile local-db up -d postgres
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: alphahive_postgres
     restart: always
     profiles: ["local-db"]
@@ -38,21 +38,6 @@ services:
       timeout: 5s
       retries: 5
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: alphahive_qdrant
-    restart: always
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   # ── Application Services ─────────────────────────────────────────────────────
 
   backend:
@@ -71,14 +56,10 @@ services:
       - ENVIRONMENT=production
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
       - REDIS_URL=redis://redis:6379/0
       # DATABASE_URL, SECRET_KEY, CORS_ORIGINS and the API keys come from .env above.
     depends_on:
       redis:
-        condition: service_healthy
-      qdrant:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
@@ -91,17 +72,23 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* is inlined at build time, so it has to be a build arg — as a
+        # runtime `environment` entry it would silently do nothing.
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     container_name: alphahive_frontend
     restart: always
     ports:
       - "3000:3000"
     environment:
+      # Read at runtime by next.config.js to proxy /svc/api, so the browser only ever
+      # talks to this origin and the session cookie stays same-origin.
       - BACKEND_URL=http://backend:8000
-      - NEXT_PUBLIC_API_URL=
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      # wget, not curl: node:alpine ships busybox wget and no curl.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -145,8 +132,6 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
-    driver: local
-  qdrant_data:
     driver: local
   prometheus_data:
     driver: local

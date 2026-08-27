@@ -1,5 +1,4 @@
 import logging
-from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -33,7 +32,7 @@ async def _owned_report(run_id: UUID, session_id: str, db: AsyncSession) -> Inve
     return report
 
 
-@router.get("/history", response_model=List[ReportHistoryItem])
+@router.get("/history", response_model=list[ReportHistoryItem])
 async def get_reports_history(
     principal: Principal = Depends(get_principal),
     db: AsyncSession = Depends(get_db),

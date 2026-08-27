@@ -1,12 +1,12 @@
 import pytest
 import pytest_asyncio
+
+# Use pytest-asyncio to handle async tests
+from conftest import requires_redis
 from httpx import AsyncClient
 
 from app.main import app
 from app.services.sentiment_service import sentiment_service
-
-# Use pytest-asyncio to handle async tests
-from conftest import requires_redis
 
 pytestmark = pytest.mark.asyncio
 
@@ -14,6 +14,7 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def client():
     from httpx import ASGITransport
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

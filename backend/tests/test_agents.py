@@ -1,11 +1,9 @@
 import asyncio
 
 import pytest
-
 from conftest import requires_redis
 
 pytestmark = pytest.mark.asyncio
-
 
 
 @requires_redis
@@ -15,31 +13,33 @@ async def test_agent_run_execution_pipeline(client):
     resp = await client.post("/api/v1/agents/run?symbol=NVDA")
     assert resp.status_code == 201
     run_data = resp.json()
-    
+
     assert run_data["ticker"] == "NVDA"
     assert "id" in run_data
     assert run_data["status"] == "running"
-    
+
     run_id = run_data["id"]
-    
+
     # 2. Poll the detail endpoint until completed (timeout in 15 seconds)
     completed = False
     details = {}
-    
+
     for _ in range(30):
         detail_resp = await client.get(f"/api/v1/agents/run/{run_id}")
         assert detail_resp.status_code == 200
         details = detail_resp.json()
-        
+
         if details["status"] in ["completed", "failed"]:
             completed = True
             break
         await asyncio.sleep(0.5)
-        
-    assert completed, f"Agent execution timed out or failed to complete. Final status: {details.get('status')}"
+
+    assert completed, (
+        f"Agent execution timed out or failed to complete. Final status: {details.get('status')}"
+    )
     assert details["status"] == "completed"
     assert details["ticker"] == "NVDA"
-    
+
     # 3. Check that parallel logs were merged and persisted
     logs = details["logs"]
     assert len(logs) > 0
@@ -51,7 +51,7 @@ async def test_agent_run_execution_pipeline(client):
     assert "news" in nodes_logged
     assert "risk" in nodes_logged
     assert "decision" in nodes_logged
-    
+
     # 4. Check report data
     report = details["report"]
     assert report is not None

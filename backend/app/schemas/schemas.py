@@ -1,16 +1,17 @@
 from datetime import date, datetime
-from typing import List, Optional, Dict, Any
+from typing import Any
 from uuid import UUID
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+# ── Auth ──
 class SignupRequest(BaseModel):
     email: EmailStr
     # Upper bound is a DoS guard: bcrypt cost is fixed, but hashing an unbounded body
     # still costs bandwidth and memory. Lower bound is the usual minimum.
     password: str = Field(..., min_length=8, max_length=128)
-    name: Optional[str] = Field(None, max_length=120)
+    name: str | None = Field(None, max_length=120)
 
     @field_validator("password")
     @classmethod
@@ -32,18 +33,17 @@ class SessionResponse(BaseModel):
     only in the httpOnly cookie, so JavaScript (and any XSS) cannot read it."""
 
     authenticated: bool
-    user_id: Optional[UUID] = None
-    email: Optional[str] = None
-    name: Optional[str] = None
+    user_id: UUID | None = None
+    email: str | None = None
+    name: str | None = None
 
 
-
-# Stock Schemas
+# ── Stocks ──
 class StockBase(BaseModel):
     symbol: str = Field(..., max_length=10, description="Stock Ticker Symbol")
     name: str = Field(..., description="Company Name")
-    sector: Optional[str] = None
-    industry: Optional[str] = None
+    sector: str | None = None
+    industry: str | None = None
 
 
 class StockCreate(StockBase):
@@ -55,7 +55,7 @@ class StockSchema(StockBase):
         from_attributes = True
 
 
-# Stock Price Schemas
+# ── Stock prices ──
 class StockPriceBase(BaseModel):
     symbol: str
     date: date
@@ -77,7 +77,7 @@ class StockPriceSchema(StockPriceBase):
         from_attributes = True
 
 
-# Portfolio Holding Schemas
+# ── Portfolio holdings ──
 class PortfolioHoldingBase(BaseModel):
     symbol: str = Field(..., min_length=1, max_length=10)
     shares: float = Field(..., gt=0, le=1e12)
@@ -102,7 +102,7 @@ class PortfolioHoldingSchema(PortfolioHoldingBase):
         from_attributes = True
 
 
-# Portfolio Schemas
+# ── Portfolios ──
 class PortfolioBase(BaseModel):
     name: str
 
@@ -114,7 +114,7 @@ class PortfolioCreate(BaseModel):
 class PortfolioSchema(PortfolioBase):
     id: UUID
     created_at: datetime
-    holdings: List[PortfolioHoldingSchema] = []
+    holdings: list[PortfolioHoldingSchema] = []
 
     class Config:
         from_attributes = True
@@ -134,7 +134,7 @@ class PortfolioSummaryHolding(BaseModel):
     sector: str
     beta: float
     volatility: float
-    last_updated: Optional[str] = None
+    last_updated: str | None = None
 
 
 class PortfolioSummaryResponse(BaseModel):
@@ -146,12 +146,13 @@ class PortfolioSummaryResponse(BaseModel):
     gain_loss_percentage: float
     weighted_beta: float
     weighted_volatility: float
-    holdings: List[PortfolioSummaryHolding]
-    sector_weights: Dict[str, float]
+    holdings: list[PortfolioSummaryHolding]
+    sector_weights: dict[str, float]
 
 
 class GrowwImportRequest(BaseModel):
     """Import holdings via the official Groww Trade API using a daily access token."""
+
     access_token: str
     replace: bool = True
 
@@ -163,40 +164,7 @@ class PortfolioImportResult(BaseModel):
     message: str
 
 
-
-# Watchlist Schemas
-class WatchlistCreate(BaseModel):
-    symbol: str
-
-
-class WatchlistSchema(BaseModel):
-    id: UUID
-    session_id: str
-    symbol: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Alert Schemas
-class AlertCreate(BaseModel):
-    symbol: str
-    trigger_type: str = Field(..., description="Trigger Type: rsi_below, rsi_above, sentiment_drop, price_above, price_below")
-    trigger_value: float
-
-
-class AlertSchema(AlertCreate):
-    id: UUID
-    session_id: str
-    is_active: bool
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Quote and News API Schemas
+# ── Quotes and news ──
 class QuoteResponse(BaseModel):
     symbol: str
     price: float
@@ -218,7 +186,7 @@ class NewsResponse(BaseModel):
     published_at: str
 
 
-# Investment Report Schemas
+# ── Investment reports ──
 class InvestmentReportSchema(BaseModel):
     id: UUID
     run_id: UUID
@@ -232,7 +200,7 @@ class InvestmentReportSchema(BaseModel):
         from_attributes = True
 
 
-# Agent Run Schemas
+# ── Agent runs ──
 class AgentRunBase(BaseModel):
     session_id: str
     ticker: str
@@ -242,14 +210,14 @@ class AgentRunSchema(AgentRunBase):
     id: UUID
     status: str
     started_at: datetime
-    ended_at: Optional[datetime] = None
-    report: Optional[InvestmentReportSchema] = None
+    ended_at: datetime | None = None
+    report: InvestmentReportSchema | None = None
 
     class Config:
         from_attributes = True
 
 
-# Orchestration Schemas (Request/Response)
+# ── Orchestration ──
 class ResearchQueryRequest(BaseModel):
     query: str = Field(..., description="Natural language stock research query (e.g. Should I buy NVDA?)")
 
@@ -264,12 +232,12 @@ class AgentRunDetailResponse(BaseModel):
     run_id: UUID
     ticker: str
     status: str
-    logs: List[AgentExecutionLog] = []
-    report: Optional[InvestmentReportSchema] = None
-    telemetry: Dict[str, Any] = {}
+    logs: list[AgentExecutionLog] = []
+    report: InvestmentReportSchema | None = None
+    telemetry: dict[str, Any] = {}
 
 
-# Technical Indicators scoring schemas
+# ── Technical indicator scoring ──
 class SignalDetail(BaseModel):
     score: int
     signal: str
@@ -298,19 +266,21 @@ class TechnicalPostureResponse(BaseModel):
     rating: str
     signals: TASignals
     summary: str
-    pivots: Optional[PivotDetails] = None
+    pivots: PivotDetails | None = None
 
 
+# ── Sentiment ──
 class SentimentResponse(BaseModel):
     symbol: str
     score: int
     rating: str
     summary: str
-    opportunities: List[str]
-    threats: List[str]
+    opportunities: list[str]
+    threats: list[str]
     source: str
 
 
+# ── SEC filings ──
 class IndexResponse(BaseModel):
     symbol: str
     form_type: str
@@ -328,9 +298,10 @@ class SearchChunkDetail(BaseModel):
 class QueryResponse(BaseModel):
     symbol: str
     query: str
-    matches: List[SearchChunkDetail]
+    matches: list[SearchChunkDetail]
 
 
+# ── Report history ──
 class ReportHistoryItem(BaseModel):
     run_id: UUID
     ticker: str
@@ -340,49 +311,9 @@ class ReportHistoryItem(BaseModel):
     created_at: str
 
 
-# Backtesting Schemas
-class BacktestRequest(BaseModel):
-    symbol: str
-    strategy: str = Field("rsi", description="Strategy type: rsi, ema_crossover, macd_crossover")
-    initial_capital: float = Field(10000.0, description="Initial portfolio cash amount")
-    range_str: str = Field("1y", description="Historical duration range (e.g. 1mo, 3mo, 6mo, 1y)")
-
-
-class EquityPoint(BaseModel):
-    date: str
-    portfolio_value: float
-    benchmark_value: float
-
-
-class BacktestTrade(BaseModel):
-    type: str
-    date: str
-    price: float
-    shares: float
-    value: float
-    cash_remaining: float
-    profit_loss: float
-    profit_loss_pct: float
-
-
-class BacktestResponse(BaseModel):
-    symbol: str
-    strategy: str
-    initial_capital: float
-    final_value: float
-    total_return: float
-    benchmark_return: float
-    sharpe_ratio: float
-    max_drawdown: float
-    win_rate: float
-    total_trades: int
-    equity_curve: List[EquityPoint]
-    trades: List[BacktestTrade]
-
-
-# Chat Schemas
+# ── Chat ──
 class ConversationCreate(BaseModel):
-    title: Optional[str] = Field(None, max_length=255)
+    title: str | None = Field(None, max_length=255)
 
 
 class ConversationUpdate(BaseModel):
@@ -391,7 +322,7 @@ class ConversationUpdate(BaseModel):
 
 class ConversationSchema(BaseModel):
     id: UUID
-    title: Optional[str] = None
+    title: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -403,12 +334,12 @@ class AgentTraceSchema(BaseModel):
     id: UUID
     node: str
     status: str
-    summary: Optional[str] = None
-    label: Optional[str] = None
-    rating: Optional[str] = None
-    confidence: Optional[int] = None
+    summary: str | None = None
+    label: str | None = None
+    rating: str | None = None
+    confidence: int | None = None
     started_at: datetime
-    ended_at: Optional[datetime] = None
+    ended_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -421,14 +352,14 @@ class MessageSchema(BaseModel):
     content: str
     status: str
     created_at: datetime
-    traces: List[AgentTraceSchema] = []
+    traces: list[AgentTraceSchema] = []
 
     class Config:
         from_attributes = True
 
 
 class ConversationDetailResponse(ConversationSchema):
-    messages: List[MessageSchema] = []
+    messages: list[MessageSchema] = []
 
 
 class ChatMessageCreate(BaseModel):
@@ -445,5 +376,3 @@ class ChatMessageCreate(BaseModel):
 class ChatMessageCreateResponse(BaseModel):
     user_message: MessageSchema
     assistant_message: MessageSchema
-
-

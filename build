@@ -3,7 +3,7 @@
 #
 #   ./build              setup if needed, then run everything (default)
 #   ./build setup        install deps + run migrations, don't start anything
-#   ./build services     start Redis + Qdrant only
+#   ./build services     start Redis only
 #   ./build test         run the backend suite and the frontend typecheck
 #   ./build stop         stop the Docker services
 #
@@ -43,7 +43,7 @@ check_env() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 port_open() {
-  # Redis/Qdrant reachability without needing nc installed.
+  # Redis reachability without needing nc installed.
   "$PY" - "$1" <<'PYEOF' 2>/dev/null
 import socket, sys
 s = socket.socket(); s.settimeout(1)
@@ -59,15 +59,14 @@ PYEOF
 # ── Steps ────────────────────────────────────────────────────────────────────
 
 degraded_note() {
-  warn "  Redis missing  -> chat streaming, rate limiting and the usage budget stop working."
-  warn "  Qdrant missing -> SEC filing search is unavailable (everything else is fine)."
-  warn "Start them yourself on 6379/6333, or start Docker and re-run."
+  warn "  Redis missing -> chat streaming, rate limiting and the usage budget stop working."
+  warn "Start Redis yourself on 6379, or start Docker and re-run."
 }
 
 services() {
   # Already up (started by hand, or a previous run)? Nothing to do.
-  if port_open 6379 && port_open 6333; then
-    say "Redis + Qdrant already running"
+  if port_open 6379; then
+    say "Redis already running"
     return 0
   fi
 
@@ -85,10 +84,9 @@ services() {
     return 0
   fi
 
-  say "Starting Redis + Qdrant"
-  # Never abort the whole run on this: the app is still useful without Qdrant, and a
-  # clear warning beats a dead script.
-  docker compose up -d redis qdrant || { warn "Could not start the containers."; degraded_note; }
+  say "Starting Redis"
+  # Never abort the whole run on this: a clear warning beats a dead script.
+  docker compose up -d redis || { warn "Could not start Redis."; degraded_note; }
 }
 
 setup() {

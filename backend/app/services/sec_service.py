@@ -1,4 +1,5 @@
 import logging
+
 import httpx
 
 logger = logging.getLogger("sec-service")
@@ -12,7 +13,7 @@ CIK_MAPPING = {
     "AMZN": "0001018724",
     "GOOGL": "0001652044",
     "GOOG": "0001652044",
-    "META": "0001326801"
+    "META": "0001326801",
 }
 
 
@@ -25,59 +26,59 @@ class SecService:
         Falls back to local mock data if the download fails, rate limits, or is offline.
         """
         symbol = symbol.upper()
-        
+
         # Bypass external network calls to SEC EDGAR in test environments
         import os
+
         if "PYTEST_CURRENT_TEST" in os.environ:
             logger.info(f"Test run detected. Bypassing real SEC download for {symbol}.")
             return self._get_mock_filing_text(symbol, form_type)
 
         cik = CIK_MAPPING.get(symbol)
-        
+
         if not cik:
             logger.warning(f"CIK not mapped for symbol: {symbol}. Using mock fallback.")
             return self._get_mock_filing_text(symbol, form_type)
 
-        headers = {
-            "User-Agent": "AlphaHive Analyst sharvil.lade@gmail.com"
-        }
+        headers = {"User-Agent": "AlphaHive Analyst sharvil.lade@gmail.com"}
 
-        # Try downloading via SEC EDGAR
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
-                # 1. Fetch submissions detail to find accession number
                 submissions_url = f"https://data.sec.gov/submissions/CIK{cik}.json"
                 resp = await client.get(submissions_url, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     recent_filings = data.get("filings", {}).get("recent", {})
-                    
-                    # Search for the latest filing matching the form_type
+
                     forms = recent_filings.get("form", [])
                     accession_nums = recent_filings.get("accessionNumber", [])
                     primary_docs = recent_filings.get("primaryDocument", [])
-                    
+
                     found_idx = -1
                     for idx, form in enumerate(forms):
                         if form == form_type:
                             found_idx = idx
                             break
-                            
+
                     if found_idx != -1:
                         accession = accession_nums[found_idx].replace("-", "")
                         primary_doc = primary_docs[found_idx]
-                        
-                        # 2. Construct archives URL to fetch actual content
+
+                        # Archives URL for the filing document itself, e.g.
                         # e.g., https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm
-                        doc_url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession}/{primary_doc}"
-                        
+                        doc_url = (
+                            f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession}/{primary_doc}"
+                        )
+
                         doc_resp = await client.get(doc_url, headers=headers)
                         if doc_resp.status_code == 200:
-                            # Strip HTML or return raw text depending on formatting
+                            # Filings are served as HTML or plain text depending on age.
                             content = doc_resp.text
                             # If content is small (meaning it is a placeholder or redirect), skip
                             if len(content) > 1000:
-                                logger.info(f"Successfully downloaded {form_type} for {symbol} from SEC EDGAR")
+                                logger.info(
+                                    f"Successfully downloaded {form_type} for {symbol} from SEC EDGAR"
+                                )
                                 return content
                         else:
                             logger.warning(f"Failed to fetch filing document: HTTP {doc_resp.status_code}")
@@ -86,12 +87,12 @@ class SecService:
         except Exception as e:
             logger.error(f"Error fetching SEC filing from EDGAR for {symbol}: {e}")
 
-        # Fallback to Mock
+        # Every network path failed — fall back to the built-in sample filing.
         logger.info(f"Using mock SEC filing data fallback for {symbol}")
         return self._get_mock_filing_text(symbol, form_type)
 
     def _get_mock_filing_text(self, symbol: str, form_type: str) -> str:
-        """Provide detailed simulated 10-K text content for vector store indexing."""
+        """Simulated 10-K text, used when SEC EDGAR is unreachable or under test."""
         if symbol == "NVDA":
             return (
                 f"NVIDIA CORPORATION Form {form_type}\n\n"

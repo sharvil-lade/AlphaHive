@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.services.llm_client import llm_client
 
@@ -13,9 +13,9 @@ async def get_agent_verdict(
     role: str,
     data_summary: str,
     rating_options: str,
-    session_id: Optional[str] = None,
-    anchor_rating: Optional[str] = None,
-) -> Dict[str, Any]:
+    session_id: str | None = None,
+    anchor_rating: str | None = None,
+) -> dict[str, Any]:
     """Ask the LLM to act as an independent specialist analyst and produce a short,
     structured verdict from the data the calling node already gathered.
 

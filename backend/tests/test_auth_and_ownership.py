@@ -25,6 +25,7 @@ def _email() -> str:
 
 # ── Password hashing ──────────────────────────────────────────────────────────
 
+
 def test_password_hash_roundtrip():
     h = hash_password("correct horse battery staple")
     assert h != "correct horse battery staple"
@@ -44,6 +45,7 @@ def test_malformed_hash_is_a_failed_login_not_a_crash():
 
 # ── Session tokens ────────────────────────────────────────────────────────────
 
+
 def test_session_token_roundtrip():
     token = encode_session("session_abc", "11111111-1111-1111-1111-111111111111", "a@b.com")
     payload = decode_session(token)
@@ -58,6 +60,7 @@ def test_forged_session_token_is_rejected():
 
 
 # ── Session issuance ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_first_visit_issues_an_anonymous_session():
@@ -122,7 +125,9 @@ async def test_login_with_wrong_password_fails_without_revealing_the_account():
 async def test_signup_claims_the_anonymous_portfolio():
     """A visitor who adds holdings before signing up must keep them."""
     async with _client() as c:
-        await c.post("/api/v1/portfolios/holdings", json={"symbol": "TCS", "shares": 5, "average_buy_price": 100.0})
+        await c.post(
+            "/api/v1/portfolios/holdings", json={"symbol": "TCS", "shares": 5, "average_buy_price": 100.0}
+        )
         await c.post("/api/v1/auth/signup", json={"email": _email(), "password": "hunter2hunter2"})
 
         summary = await c.get("/api/v1/portfolios/summary")
@@ -130,6 +135,7 @@ async def test_signup_claims_the_anonymous_portfolio():
 
 
 # ── Cross-session isolation (the IDOR regressions) ────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_another_session_cannot_delete_your_holding():
@@ -197,6 +203,7 @@ async def test_stream_without_a_session_cookie_is_rejected():
 
 # ── Data rights ───────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_export_requires_an_account():
     async with _client() as c:
@@ -208,7 +215,9 @@ async def test_export_requires_an_account():
 async def test_delete_account_erases_the_data():
     async with _client() as c:
         await c.post("/api/v1/auth/signup", json={"email": _email(), "password": "hunter2hunter2"})
-        await c.post("/api/v1/portfolios/holdings", json={"symbol": "WIPRO", "shares": 1, "average_buy_price": 10.0})
+        await c.post(
+            "/api/v1/portfolios/holdings", json={"symbol": "WIPRO", "shares": 1, "average_buy_price": 10.0}
+        )
 
         export = await c.get("/api/v1/auth/export")
         assert export.status_code == 200
@@ -220,6 +229,7 @@ async def test_delete_account_erases_the_data():
 
 
 # ── Input validation ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_negative_shares_are_rejected():
@@ -235,7 +245,5 @@ async def test_negative_shares_are_rejected():
 async def test_oversized_chat_message_is_rejected():
     async with _client() as c:
         conv_id = (await c.post("/api/v1/chat/conversations", json={})).json()["id"]
-        res = await c.post(
-            f"/api/v1/chat/conversations/{conv_id}/messages", json={"content": "x" * 5000}
-        )
+        res = await c.post(f"/api/v1/chat/conversations/{conv_id}/messages", json={"content": "x" * 5000})
         assert res.status_code == 422

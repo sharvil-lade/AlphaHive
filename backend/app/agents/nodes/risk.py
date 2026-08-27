@@ -1,10 +1,12 @@
-from typing import Dict, Any
+from typing import Any
+
 import numpy as np
+
 from app.agents.state import AgentState
-from app.services.vector_store import vector_store
-from app.services.stock_service import stock_service
-from app.agents.utils import log_agent_activity, emit_chat_event
+from app.agents.utils import emit_chat_event, log_agent_activity
 from app.agents.verdict import get_agent_verdict
+from app.services import sec_index
+from app.services.stock_service import stock_service
 
 # Beta is computed against the locally-relevant benchmark index — Nifty 50 for
 # Indian tickers (URL-encoded "^NSEI", verified live via Yahoo's chart API),
@@ -13,51 +15,44 @@ _INDIA_BENCHMARK_SYMBOL = "%5ENSEI"
 _US_BENCHMARK_SYMBOL = "SPY"
 
 
-async def risk_node(state: AgentState) -> Dict[str, Any]:
+async def risk_node(state: AgentState) -> dict[str, Any]:
     """Risk node computing statistical volatility, beta, and retrieving SEC disclosures."""
     ticker = state["ticker"]
     run_id = state["run_id"]
     message_id = state.get("message_id")
 
     start_log = await log_agent_activity(
-        run_id,
-        "risk",
-        f"Retrieving SEC filings and historical prices to run risk audit for {ticker}"
+        run_id, "risk", f"Retrieving SEC filings and historical prices to run risk audit for {ticker}"
     )
     if message_id:
         await emit_chat_event(message_id, {"type": "agent-status", "node": "risk", "status": "running"})
 
     sec_context = []
-    risk_metrics = {
-        "beta": 1.0,
-        "annualized_volatility": 0.0,
-        "history_days": 0
-    }
-    
-    # 1. Fetch SEC RAG context
+    risk_metrics = {"beta": 1.0, "annualized_volatility": 0.0, "history_days": 0}
+
     try:
         sec_query = "regulatory risk factors, competition, operational threats, liabilities"
-        sec_results = await vector_store.search_chunks(ticker, sec_query, limit=3)
+        sec_results = await sec_index.search(ticker, sec_query, limit=3)
         for r in sec_results:
-            sec_context.append({
-                "text": r.get("text", ""),
-                "section": r.get("section", "Risk Factors"),
-                "score": r.get("score", 0.0)
-            })
+            sec_context.append(
+                {
+                    "text": r.get("text", ""),
+                    "section": r.get("section", "Risk Factors"),
+                    "score": r.get("score", 0.0),
+                }
+            )
         sec_log = await log_agent_activity(
-            run_id, 
-            "risk", 
-            f"Retrieved {len(sec_context)} relevant risk factor chunks from SEC vector indexing."
+            run_id,
+            "risk",
+            f"Retrieved {len(sec_context)} relevant risk factor excerpts from indexed SEC filings.",
         )
     except Exception as e:
         sec_log = await log_agent_activity(
-            run_id, 
-            "risk", 
-            f"SEC filings vector store retrieval bypassed or failed: {e}. Falling back to default risk disclosures."
+            run_id,
+            "risk",
+            f"SEC filing search bypassed or failed: {e}. Falling back to default risk disclosures.",
         )
-        
-    # 2. Compute Volatility and Beta (benchmarked against Nifty 50 for Indian
-    # tickers, S&P 500 for everything else)
+
     benchmark_symbol = (
         _INDIA_BENCHMARK_SYMBOL if stock_service.resolve_market(ticker) == "IN" else _US_BENCHMARK_SYMBOL
     )
@@ -94,7 +89,7 @@ async def risk_node(state: AgentState) -> Dict[str, Any]:
 
         risk_summary = (
             f"Beta {risk_metrics['beta']:.2f} vs {benchmark_symbol}, annualized volatility "
-            f"{risk_metrics['annualized_volatility']*100:.2f}% over {risk_metrics['history_days']} trading days. "
+            f"{risk_metrics['annualized_volatility'] * 100:.2f}% over {risk_metrics['history_days']} trading days. "
             f"SEC risk-factor excerpts: {[c['text'][:200] for c in sec_context] or 'none available'}."
         )
         verdict = await get_agent_verdict(
@@ -109,22 +104,16 @@ async def risk_node(state: AgentState) -> Dict[str, Any]:
             run_id,
             "risk",
             f"Computed statistical risk profile for {ticker} (vs {benchmark_symbol}). "
-            f"Volatility: {risk_metrics['annualized_volatility']*100:.2f}%, Beta: {risk_metrics['beta']:.2f}. "
-            f"Risk agent verdict: {verdict['rating']} ({verdict['confidence']}%)."
+            f"Volatility: {risk_metrics['annualized_volatility'] * 100:.2f}%, Beta: {risk_metrics['beta']:.2f}. "
+            f"Risk agent verdict: {verdict['rating']} ({verdict['confidence']}%).",
         )
         if message_id:
             await emit_chat_event(message_id, {"type": "agent-status", "node": "risk", "status": "completed"})
     except Exception as e:
         stat_log = await log_agent_activity(
-            run_id,
-            "risk",
-            f"Failed to calculate statistical risk metrics: {e}"
+            run_id, "risk", f"Failed to calculate statistical risk metrics: {e}"
         )
         if message_id:
             await emit_chat_event(message_id, {"type": "agent-status", "node": "risk", "status": "failed"})
 
-    return {
-        "sec_context": sec_context,
-        "risk_metrics": risk_metrics,
-        "logs": [start_log, sec_log, stat_log]
-    }
+    return {"sec_context": sec_context, "risk_metrics": risk_metrics, "logs": [start_log, sec_log, stat_log]}

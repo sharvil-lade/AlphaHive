@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+
 from redis.asyncio import Redis
 
 from app.core.config import settings
@@ -12,7 +12,7 @@ class TokenBudgetService:
 
     def __init__(self, max_tokens_per_session: int = 100000):
         self.max_tokens_per_session = max_tokens_per_session
-        self.redis: Optional[Redis] = None
+        self.redis: Redis | None = None
 
     async def _get_redis(self) -> Redis:
         if self.redis is None:
@@ -35,12 +35,14 @@ class TokenBudgetService:
         try:
             usage = await self.get_usage(session_id)
             if usage + required_tokens > self.max_tokens_per_session:
-                logger.warning(f"Session {session_id} has exceeded token budget ({usage}/{self.max_tokens_per_session})")
+                logger.warning(
+                    f"Session {session_id} has exceeded token budget ({usage}/{self.max_tokens_per_session})"
+                )
                 return False
             return True
         except Exception as e:
             logger.error(f"Failed to check token budget: {e}")
-            return True # fail open to prevent blocking execution if Redis fails
+            return True  # fail open to prevent blocking execution if Redis fails
 
     async def track_usage(self, session_id: str, tokens_used: int):
         """Track and increment token usage for a session."""
@@ -48,9 +50,10 @@ class TokenBudgetService:
             redis = await self._get_redis()
             key = f"token_budget:{session_id}"
             await redis.incrby(key, tokens_used)
-            # Set usage key to expire in 24 hours (86400 seconds)
             await redis.expire(key, 86400)
-            logger.info(f"Session {session_id} consumed {tokens_used} tokens. Total: {await redis.get(key)}/{self.max_tokens_per_session}")
+            logger.info(
+                f"Session {session_id} consumed {tokens_used} tokens. Total: {await redis.get(key)}/{self.max_tokens_per_session}"
+            )
         except Exception as e:
             logger.error(f"Failed to track token usage: {e}")
             pass
