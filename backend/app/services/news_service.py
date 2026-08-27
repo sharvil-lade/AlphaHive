@@ -4,9 +4,9 @@ import logging
 from typing import Any
 
 import httpx
-from redis.asyncio import Redis
 
 from app.core.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger("news-service")
 
@@ -15,23 +15,16 @@ class NewsService:
     """Service class handling company-specific news fetching and caching."""
 
     def __init__(self):
-        self.redis_client: Redis | None = None
         self.finnhub_key = settings.FINNHUB_API_KEY
         if self.finnhub_key == "your_finnhub_key_here" or not self.finnhub_key:
             self.finnhub_key = None
         self.marketaux_key = settings.MARKETAUX_API_KEY or None
 
-    async def get_redis(self) -> Redis:
-        """Lazily initialize Redis connection."""
-        if self.redis_client is None:
-            self.redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        return self.redis_client
-
     async def fetch_news(self, symbol: str) -> list[dict[str, Any]]:
         """Fetch news articles for a company symbol. Checks Redis cache first."""
         symbol = symbol.upper()
         cache_key = f"news:{symbol}"
-        redis = await self.get_redis()
+        redis = get_redis()
 
         cached_val = await redis.get(cache_key)
         if cached_val:

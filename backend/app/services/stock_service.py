@@ -4,9 +4,9 @@ import logging
 from typing import Any
 
 import httpx
-from redis.asyncio import Redis
 
 from app.core.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger("stock-service")
 
@@ -81,7 +81,6 @@ class StockService:
     and BSE India, with India-primary market resolution and Redis caching."""
 
     def __init__(self):
-        self.redis_client: Redis | None = None
         self.finnhub_key = settings.FINNHUB_API_KEY
         self.alpha_vantage_key = settings.ALPHA_VANTAGE_API_KEY
         self.twelve_data_key = settings.TWELVE_DATA_API_KEY
@@ -92,12 +91,6 @@ class StockService:
             self.alpha_vantage_key = None
         if not self.twelve_data_key:
             self.twelve_data_key = None
-
-    async def get_redis(self) -> Redis:
-        """Lazily initialize Redis connection."""
-        if self.redis_client is None:
-            self.redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        return self.redis_client
 
     @staticmethod
     def resolve_market(symbol: str) -> str:
@@ -125,7 +118,7 @@ class StockService:
         """
         symbol = symbol.upper()
         cache_key = f"quote:{symbol}"
-        redis = await self.get_redis()
+        redis = get_redis()
 
         cached_val = await redis.get(cache_key)
         if cached_val:
@@ -189,7 +182,7 @@ class StockService:
         """Fetch general company profile information."""
         symbol = symbol.upper()
         cache_key = f"profile:{symbol}"
-        redis = await self.get_redis()
+        redis = get_redis()
 
         cached_val = await redis.get(cache_key)
         if cached_val:
@@ -252,7 +245,7 @@ class StockService:
         """
         symbol = symbol.upper()
         cache_key = f"history:{symbol}:{interval}:{range_str}"
-        redis = await self.get_redis()
+        redis = get_redis()
 
         cached_val = await redis.get(cache_key)
         if cached_val:

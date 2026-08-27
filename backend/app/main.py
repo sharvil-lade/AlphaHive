@@ -7,12 +7,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging_config import configure_logging
+from app.core.redis import close_redis, get_redis
 from app.db.session import get_db
 
 # ── Structured logging must be configured before any module-level loggers fire ──
@@ -81,6 +81,7 @@ async def lifespan(app: FastAPI):
     from app.db.session import engine
 
     await engine.dispose()
+    await close_redis()
 
 
 app = FastAPI(
@@ -233,19 +234,14 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         _fail("postgres", e)
 
-    redis_client = None
     try:
         start_time = time.time()
-        redis_client = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, socket_timeout=2)
-        if await redis_client.ping():
+        if await get_redis().ping():
             health_results["redis"] = f"connected ({(time.time() - start_time) * 1000:.2f}ms)"
         else:
             _fail("redis", RuntimeError("ping failed"))
     except Exception as e:
         _fail("redis", e)
-    finally:
-        if redis_client is not None:
-            await redis_client.aclose()
 
     if health_results["status"] == "unhealthy":
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=health_results)

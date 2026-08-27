@@ -1,8 +1,7 @@
 import logging
 
-from redis.asyncio import Redis
-
 from app.core.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger("token-budget-service")
 
@@ -12,17 +11,11 @@ class TokenBudgetService:
 
     def __init__(self, max_tokens_per_session: int = 100000):
         self.max_tokens_per_session = max_tokens_per_session
-        self.redis: Redis | None = None
-
-    async def _get_redis(self) -> Redis:
-        if self.redis is None:
-            self.redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        return self.redis
 
     async def get_usage(self, session_id: str) -> int:
         """Get the current accumulated token usage for a session."""
         try:
-            redis = await self._get_redis()
+            redis = get_redis()
             key = f"token_budget:{session_id}"
             val = await redis.get(key)
             return int(val) if val else 0
@@ -47,7 +40,7 @@ class TokenBudgetService:
     async def track_usage(self, session_id: str, tokens_used: int):
         """Track and increment token usage for a session."""
         try:
-            redis = await self._get_redis()
+            redis = get_redis()
             key = f"token_budget:{session_id}"
             await redis.incrby(key, tokens_used)
             await redis.expire(key, 86400)

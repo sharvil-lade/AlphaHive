@@ -47,7 +47,7 @@ async def test_rate_limiter_unit(monkeypatch):
     mock_redis = AsyncMock()
     mock_redis.incr.return_value = 6  # 6th request in the window, limit is 5
     mock_redis.ttl.return_value = 42
-    limiter.redis = mock_redis
+    monkeypatch.setattr("app.core.rate_limiter.get_redis", lambda: mock_redis)
 
     mock_request = MagicMock()
     mock_request.headers = {}
@@ -164,3 +164,34 @@ async def test_health_endpoint_structure(client):
     else:
         # Unhealthy but structured error response
         assert "detail" in data
+
+
+def test_shared_redis_client_has_timeouts():
+    """The shared client must bound how long a Redis outage can block a request.
+
+    redis-py waits forever by default. Without these, an unreachable Redis turned
+    every guarded endpoint into a hang: one chat POST stacked two rate-limiter checks,
+    a liveness ping and a budget lookup, and never answered at all.
+    """
+    from app.core.redis import CONNECT_TIMEOUT, OPERATION_TIMEOUT, get_redis
+
+    kwargs = get_redis().connection_pool.connection_kwargs
+    assert kwargs["socket_connect_timeout"] == CONNECT_TIMEOUT
+    assert kwargs["socket_timeout"] == OPERATION_TIMEOUT
+    assert CONNECT_TIMEOUT <= 2 and OPERATION_TIMEOUT <= 5
+
+
+async def test_redis_available_fails_fast_when_down(monkeypatch):
+    """An unreachable Redis reports unavailable quickly, rather than hanging."""
+    import time
+
+    import app.core.redis as redis_module
+
+    monkeypatch.setattr(redis_module, "_client", None)
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://127.0.0.1:6390/0")  # nothing listens here
+    try:
+        started = time.monotonic()
+        assert await redis_module.redis_available() is False
+        assert time.monotonic() - started < redis_module.CONNECT_TIMEOUT + 2
+    finally:
+        await redis_module.close_redis()

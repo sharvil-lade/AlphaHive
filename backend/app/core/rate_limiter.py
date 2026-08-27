@@ -2,9 +2,9 @@ import logging
 import os
 
 from fastapi import HTTPException, Request, status
-from redis.asyncio import Redis
 
 from app.core.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger("rate-limiter")
 
@@ -36,12 +36,6 @@ class RateLimiter:
     def __init__(self, requests_per_minute: int = 60, name: str = "default"):
         self.requests_per_minute = requests_per_minute
         self.name = name
-        self.redis: Redis | None = None
-
-    async def _get_redis(self) -> Redis:
-        if self.redis is None:
-            self.redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        return self.redis
 
     async def __call__(self, request: Request):
         # Bypass rate limits during automated testing to avoid test collisions.
@@ -51,7 +45,7 @@ class RateLimiter:
         global _redis_down
 
         try:
-            redis = await self._get_redis()
+            redis = get_redis()
             key = f"rate_limit:{self.name}:{client_ip(request)}"
 
             count = await redis.incr(key)
